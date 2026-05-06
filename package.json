@@ -1,0 +1,42 @@
+{
+  "name": "slack-jira-thread-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:node": "node scripts/check-node-version.mjs",
+    "predev": "npm run check:node",
+    "prebuild": "npm run check:node",
+    "prestart": "npm run check:node",
+    "pretest": "npm run check:node",
+    "preprisma:generate": "npm run check:node",
+    "preprisma:migrate": "npm run check:node",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@slack/bolt": "^4.6.0",
+    "@slack/oauth": "^3.0.5",
+    "express": "^5.1.0",
+    "openai": "^4.104.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.10.5",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": "^20.0.0"
+  }
+}

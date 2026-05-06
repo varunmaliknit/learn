@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ThreadLink {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  channelId    String
+  threadTs     String
+  jiraIssueKey String
+  jiraIssueId  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([workspaceId, channelId, threadTs])
+}
+
+model ProcessedEvent {
+  id           String   @id @default(cuid())
+  slackEventId String   @unique
+  type         String
+  createdAt    DateTime @default(now())
+}
