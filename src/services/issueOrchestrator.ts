@@ -1,6 +1,6 @@
 import type { WebClient } from '@slack/web-api';
-import type { JiraClient } from '../jira/jiraClient.js';
-import type { IssueExtraction, LlmExtractor } from '../llm/extractor.js';
+import type { JiraClient, JiraIssueDetails } from '../jira/jiraClient.js';
+import type { IssueExtraction, IssueSyncPlan, LlmExtractor } from '../llm/extractor.js';
 import {
   buildThreadTranscript,
   type SlackThreadMessage,
@@ -8,6 +8,11 @@ import {
 } from '../slack/threadService.js';
 import type { ThreadLinkService } from './threadLinkService.js';
 import type { Logger } from 'pino';
+import {
+  formatJiraDescription,
+  normalizeDescriptionSections,
+  parseJiraDescription
+} from './jiraDescriptionFormatter.js';
 
 export interface HandleMentionInput {
   workspaceId: string;
@@ -29,6 +34,14 @@ export type IssueOrchestratorResult =
       action: 'updated';
       jiraIssueKey: string;
       jiraIssueUrl: string;
+      updateSummary: string;
+      threadTs: string;
+    }
+  | {
+      action: 'no_change';
+      jiraIssueKey: string;
+      jiraIssueUrl: string;
+      updateSummary: string;
       threadTs: string;
     };
 
@@ -68,20 +81,15 @@ export class IssueOrchestrator {
       (await this.recoverLinkFromThread(linkRef, messages, input.jiraIssueKey));
 
     if (existingLink) {
-      await this.jiraClient.addComment(
-        existingLink.jiraIssueKey,
-        formatUpdateComment(extraction, transcript)
-      );
-      this.log.info(
-        { jiraIssueKey: existingLink.jiraIssueKey, threadTs },
-        'Updated existing Jira issue from Slack thread'
-      );
-      return {
-        action: 'updated',
-        jiraIssueKey: existingLink.jiraIssueKey,
-        jiraIssueUrl: this.jiraClient.issueUrl(existingLink.jiraIssueKey),
-        threadTs
-      };
+      const currentIssue = await this.jiraClient.getIssue(existingLink.jiraIssueKey);
+      const syncPlan = await this.llmExtractor.planIssueSync({
+        transcript,
+        jiraSummary: currentIssue.summary,
+        jiraDescription: currentIssue.description,
+        jiraRecentComments: currentIssue.recentComments
+      });
+
+      return this.applySyncPlan(currentIssue, syncPlan, transcript, threadTs);
     }
 
     const issue = await this.jiraClient.createIssue({
@@ -129,6 +137,72 @@ export class IssueOrchestrator {
 
     return recoveredLink;
   }
+
+  private async applySyncPlan(
+    issue: JiraIssueDetails,
+    syncPlan: IssueSyncPlan,
+    transcript: string,
+    threadTs: string
+  ): Promise<IssueOrchestratorResult> {
+    const currentSections = parseJiraDescription(issue.summary, issue.description);
+    const nextSections = normalizeDescriptionSections(syncPlan.descriptionSections, currentSections);
+    const nextDescription = formatJiraDescription(nextSections);
+    const nextSummary = syncPlan.summary ?? issue.summary;
+
+    const summaryChanged = !equivalentText(issue.summary, nextSummary);
+    const descriptionChanged = !equivalentText(issue.description, nextDescription);
+    const comment = syncPlan.comment;
+    const shouldAddComment = Boolean(comment);
+
+    if (!summaryChanged && !descriptionChanged && !shouldAddComment) {
+      this.log.info(
+        { jiraIssueKey: issue.key, threadTs, reasoning: syncPlan.reasoning, modelDecision: syncPlan.decision },
+        'No Jira update required from Slack thread'
+      );
+
+      return {
+        action: 'no_change',
+        jiraIssueKey: issue.key,
+        jiraIssueUrl: issue.url,
+        updateSummary: 'no changes needed',
+        threadTs
+      };
+    }
+
+    let updateSummary = describeAppliedChanges(summaryChanged, descriptionChanged, shouldAddComment);
+
+    if (summaryChanged || descriptionChanged) {
+      await this.jiraClient.updateIssue(issue.key, {
+        summary: summaryChanged ? nextSummary : undefined,
+        description: descriptionChanged ? nextDescription : undefined
+      });
+    }
+
+    if (comment) {
+      await this.jiraClient.addComment(issue.key, comment);
+    }
+
+    this.log.info(
+      {
+        jiraIssueKey: issue.key,
+        threadTs,
+        modelDecision: syncPlan.decision,
+        reasoning: syncPlan.reasoning,
+        summaryChanged,
+        descriptionChanged,
+        commentAdded: shouldAddComment
+      },
+      'Updated existing Jira issue from Slack thread'
+    );
+
+    return {
+      action: 'updated',
+      jiraIssueKey: issue.key,
+      jiraIssueUrl: issue.url,
+      updateSummary,
+      threadTs
+    };
+  }
 }
 
 export function formatUpdateComment(extraction: IssueExtraction, transcript: string): string {
@@ -158,4 +232,50 @@ function findExistingJiraKey(messages: SlackThreadMessage[]): string | null {
   }
 
   return null;
+}
+
+function equivalentText(left: string, right: string): boolean {
+  return canonicalizeText(left) === canonicalizeText(right);
+}
+
+function canonicalizeText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+function describeAppliedChanges(
+  summaryChanged: boolean,
+  descriptionChanged: boolean,
+  commentAdded: boolean
+): string {
+  if (summaryChanged && descriptionChanged && commentAdded) {
+    return 'summary, description, and comment updated';
+  }
+
+  if (summaryChanged && descriptionChanged) {
+    return 'summary and description updated';
+  }
+
+  if (descriptionChanged && commentAdded) {
+    return 'description refreshed and comment added';
+  }
+
+  if (summaryChanged && commentAdded) {
+    return 'summary updated and comment added';
+  }
+
+  if (descriptionChanged) {
+    return 'description refreshed';
+  }
+
+  if (summaryChanged) {
+    return 'summary updated';
+  }
+
+  return 'comment added';
 }

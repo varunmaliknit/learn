@@ -16,9 +16,24 @@ export interface JiraIssue {
   url: string;
 }
 
+export interface JiraIssueDetails extends JiraIssue {
+  summary: string;
+  description: string;
+  recentComments: string[];
+}
+
 interface JiraIssueResponse {
   id: string;
   key: string;
+  fields?: {
+    summary?: string | null;
+    description?: unknown;
+    comment?: {
+      comments?: Array<{
+        body?: unknown;
+      }>;
+    };
+  };
 }
 
 interface JiraProjectResponse {
@@ -75,7 +90,7 @@ export class JiraClient {
     });
   }
 
-  public async getIssue(issueKey: string): Promise<JiraIssue> {
+  public async getIssue(issueKey: string): Promise<JiraIssueDetails> {
     const issue = await this.request<JiraIssueResponse>(
       `/rest/api/3/issue/${encodeURIComponent(issueKey)}`,
       {
@@ -86,8 +101,38 @@ export class JiraClient {
     return {
       id: issue.id,
       key: issue.key,
-      url: this.issueUrl(issue.key)
+      url: this.issueUrl(issue.key),
+      summary: issue.fields?.summary?.trim() || issue.key,
+      description: fromAtlassianDocument(issue.fields?.description),
+      recentComments: (issue.fields?.comment?.comments ?? [])
+        .slice(-5)
+        .map((comment) => fromAtlassianDocument(comment.body))
+        .filter((body) => body.length > 0)
     };
+  }
+
+  public async updateIssue(
+    issueKey: string,
+    input: { summary?: string; description?: string }
+  ): Promise<void> {
+    const fields: Record<string, unknown> = {};
+
+    if (typeof input.summary === 'string') {
+      fields.summary = input.summary;
+    }
+
+    if (typeof input.description === 'string') {
+      fields.description = toAtlassianDocument(input.description);
+    }
+
+    if (Object.keys(fields).length === 0) {
+      return;
+    }
+
+    await this.request(`/rest/api/3/issue/${encodeURIComponent(issueKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ fields })
+    });
   }
 
   public issueUrl(issueKey: string): string {
@@ -169,6 +214,45 @@ function toAtlassianDocument(text: string): unknown {
       content: line ? [{ type: 'text', text: line }] : []
     }))
   };
+}
+
+function fromAtlassianDocument(value: unknown): string {
+  if (!value || typeof value !== 'object') {
+    return '';
+  }
+
+  const lines = extractTextSegments(value);
+  return lines.join('\n').trim();
+}
+
+function extractTextSegments(node: unknown): string[] {
+  if (!node || typeof node !== 'object') {
+    return [];
+  }
+
+  const record = node as {
+    type?: string;
+    text?: string;
+    content?: unknown[];
+  };
+
+  if (record.type === 'text' && typeof record.text === 'string') {
+    return [record.text];
+  }
+
+  const content = Array.isArray(record.content) ? record.content : [];
+  const childText = content.flatMap((child) => extractTextSegments(child));
+
+  if (record.type === 'paragraph' || record.type === 'listItem') {
+    const joined = childText.join('').trim();
+    return joined ? [joined] : [];
+  }
+
+  if (record.type === 'bulletList' || record.type === 'orderedList' || record.type === 'doc') {
+    return childText;
+  }
+
+  return childText;
 }
 
 function issueTypeCandidates(requestedType: JiraIssueType): string[] {

@@ -82,7 +82,9 @@ export function createSlackApp(deps: SlackAppDependencies) {
       const text =
         result.action === 'created'
           ? `Created Jira issue ${result.jiraIssueKey}: <${result.jiraIssueUrl}|${result.summary}>`
-          : `Updated linked Jira issue ${result.jiraIssueKey}`;
+          : result.action === 'no_change'
+            ? `No Jira changes needed for ${result.jiraIssueKey}`
+            : `Updated linked Jira issue ${result.jiraIssueKey}: ${result.updateSummary}`;
 
       await app.client.chat.postMessage({
         channel: event.channel,
