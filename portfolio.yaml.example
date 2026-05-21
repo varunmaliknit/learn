@@ -1,0 +1,106 @@
+# Stock Portfolio Notification Agent — Configuration
+# Copy this file to portfolio.yaml and customise.
+
+stocks:
+  # --- Semiconductors ---
+  - symbol: ASML
+    name: ASML Holding
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- Defence ---
+  - symbol: BA.L
+    name: BAE Systems
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- Healthcare ---
+  - symbol: COH.AX
+    name: Cochlear
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- Data & Analytics ---
+  - symbol: EXPN.L
+    name: Experian
+    alert_thresholds:
+      price_change_pct: 2.5
+      volume_spike: 1.5
+
+  # --- Gaming / Leisure ---
+  - symbol: GAW.L
+    name: Games Workshop
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- E-Commerce / LatAm ---
+  - symbol: MELI
+    name: MercadoLibre
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- Consumer / Apparel ---
+  - symbol: NKE
+    name: Nike
+    alert_thresholds:
+      price_change_pct: 2.5
+      volume_spike: 1.5
+
+  # --- Information & Analytics ---
+  - symbol: RELX.L
+    name: RELX
+    alert_thresholds:
+      price_change_pct: 2.5
+      volume_spike: 1.5
+
+  # --- Restaurant / China ---
+  - symbol: YUMC
+    name: Yum China
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  # --- Commodities ---
+  - symbol: GC=F
+    name: Gold
+    alert_thresholds:
+      price_change_pct: 2.0
+      volume_spike: 2.0
+
+  - symbol: SI=F
+    name: Silver
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+  - symbol: HG=F
+    name: Copper
+    alert_thresholds:
+      price_change_pct: 3.0
+      volume_spike: 2.0
+
+defaults:
+  price_change_pct: 2.0
+  volume_spike: 1.5
+
+scheduler:
+  daily_digest_hour: 8
+  daily_digest_minute: 0
+  timezone: "Europe/London"
+
+# Email settings can also be set via environment variables
+# (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM, EMAIL_TO)
+email:
+  enabled: true
+  # smtp_host: "smtp.gmail.com"
+  # smtp_port: 587
+  # smtp_user: "you@gmail.com"
+  # smtp_password: "your-app-password"
+  # from_address: "you@gmail.com"
+  # to_addresses:
+  #   - "you@gmail.com"
