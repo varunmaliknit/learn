@@ -11,6 +11,8 @@ from stock_agent.models import NewsArticle, NewsSummary, Sentiment
 
 logger = logging.getLogger(__name__)
 
+_COMMODITY_SYMBOLS = {"GC=F", "SI=F", "HG=F", "CL=F", "NG=F", "PL=F"}
+
 SYSTEM_PROMPT = """\
 You are a portfolio analyst preparing a daily briefing for an investor. \
 Your job is to help them decide if any action is needed on this stock today.
@@ -41,6 +43,9 @@ the material event. Be concrete (e.g., "Q1 EPS beat estimates by 15%").
    - [MARKET] for sector trends, macro factors
    - [RISK] for regulatory, legal, competitive threats
    - [DIVIDEND] for yield, payout changes
+
+IMPORTANT: This is a STOCK. Focus on company-specific news. Ignore unrelated \
+companies or generic market commentary.
 
 Respond in JSON:
 {
@@ -79,10 +84,26 @@ def summarize_news(
             key_points=[a.title for a in relevant[:3]],
         )
 
+    is_commodity = symbol in _COMMODITY_SYMBOLS or symbol.endswith("=F")
+
     article_text = "\n".join(
         f"- [{a.source}] {a.title}" for a in articles[:12]
     )
-    user_prompt = f"Stock: {name} ({symbol})\n\nRecent articles:\n{article_text}"
+
+    if is_commodity:
+        user_prompt = (
+            f"Commodity: {name} (futures ticker: {symbol})\n\n"
+            f"IMPORTANT: This is the physical COMMODITY {name}, NOT a mining company "
+            f"or stock. Focus ONLY on {name.lower()} commodity price drivers: "
+            f"supply/demand fundamentals, central bank policy, dollar strength, "
+            f"geopolitical events, tariffs, inflation data, ETF flows. "
+            f"Ignore any mining company stock news.\n\n"
+            f"Use these key_point tags: [SUPPLY], [DEMAND], [MACRO], "
+            f"[GEOPOLITICAL], [TECHNICAL]\n\n"
+            f"Recent articles:\n{article_text}"
+        )
+    else:
+        user_prompt = f"Stock: {name} ({symbol})\n\nRecent articles:\n{article_text}"
 
     try:
         client = OpenAI(api_key=api_key)

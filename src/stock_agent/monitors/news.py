@@ -15,10 +15,36 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en&gl=US&ceid=US:en"
 
+COMMODITY_SYMBOLS = {"GC=F", "SI=F", "HG=F", "CL=F", "NG=F", "PL=F"}
+
+# Words that indicate mining/stock articles rather than commodity price news
+_MINING_STOCK_WORDS = [
+    "shares", "stock price", "nasdaq", "nyse", "tsx", "ipo",
+    "market cap", "quarterly results", "annual report", "ceo",
+    "drill results", "mining company", "ore grade",
+]
+
+
+def _is_commodity(stock: StockConfig) -> bool:
+    return stock.symbol in COMMODITY_SYMBOLS or stock.symbol.endswith("=F")
+
 
 def _is_relevant(title: str, stock: StockConfig) -> bool:
-    """Check if a headline is relevant to the specific stock."""
+    """Check if a headline is relevant to the specific stock/commodity."""
     title_lower = title.lower()
+
+    if _is_commodity(stock):
+        name_lower = (stock.name or "").lower()
+        # For commodities: must mention the commodity name + price/market context
+        commodity_terms = ["price", "prices", "futures", "spot", "rally", "drop",
+                          "surge", "fall", "rise", "demand", "supply", "tariff",
+                          "fed", "dollar", "inflation", "central bank", "reserve",
+                          "etf", "commodity", "commodities", "forecast", "outlook"]
+        has_commodity_name = name_lower in title_lower
+        has_price_context = any(t in title_lower for t in commodity_terms)
+        is_mining_stock = any(w in title_lower for w in _MINING_STOCK_WORDS)
+        return has_commodity_name and has_price_context and not is_mining_stock
+
     symbol_clean = stock.symbol.replace(".L", "").replace(".AX", "").replace("=F", "").lower()
 
     name_lower = (stock.name or "").lower()
@@ -93,7 +119,10 @@ def fetch_yfinance_news(stock: StockConfig) -> list[NewsArticle]:
 
 def fetch_google_news(stock: StockConfig, max_articles: int = 8) -> list[NewsArticle]:
     search_name = stock.name or stock.symbol
-    query = f'"{search_name}" stock OR shares OR earnings OR dividend'
+    if _is_commodity(stock):
+        query = f'"{search_name}" price OR futures OR commodity OR demand OR supply'
+    else:
+        query = f'"{search_name}" stock OR shares OR earnings OR dividend'
     url = GOOGLE_NEWS_RSS.format(query=requests.utils.quote(query))
     try:
         feed = feedparser.parse(url)
