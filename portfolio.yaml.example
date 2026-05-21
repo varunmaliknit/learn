@@ -102,5 +102,7 @@ email:
   # smtp_user: "you@gmail.com"
   # smtp_password: "your-app-password"
   # from_address: "you@gmail.com"
-  # to_addresses:
-  #   - "you@gmail.com"
+  to_addresses:
+    - "varun83.m@gmail.com"
+    - "varun.malik007@gmail.com"
+    - "prachies@gmail.com"
