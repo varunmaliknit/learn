@@ -15,7 +15,7 @@ Pre-configured for an international portfolio:
 | Games Workshop | GAW.L | LSE | UK |
 | MercadoLibre | MELI | NASDAQ | Argentina/LatAm |
 | Nike | NKE | NYSE | US |
-| RELX | RELX.L | LSE | UK |
+| RELX | REL.L | LSE | UK |
 | Yum China | YUMC | NYSE | China |
 | Gold | GC=F | Futures | Global |
 | Silver | SI=F | Futures | Global |

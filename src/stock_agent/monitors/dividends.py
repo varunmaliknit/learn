@@ -41,7 +41,7 @@ def fetch_dividend_info(stock: StockConfig) -> DividendInfo | None:
             symbol=stock.symbol,
             name=name,
             dividend_rate=dividend_rate,
-            dividend_yield=round(dividend_yield * 100, 2) if dividend_yield else None,
+            dividend_yield=round(dividend_yield, 2) if dividend_yield else None,
             ex_date=ex_date,
         )
     except Exception:

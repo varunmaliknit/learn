@@ -52,7 +52,7 @@ stocks:
       volume_spike: 1.5
 
   # --- Information & Analytics ---
-  - symbol: RELX.L
+  - symbol: REL.L
     name: RELX
     alert_thresholds:
       price_change_pct: 2.5
