@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 import requests
@@ -123,6 +123,17 @@ def fetch_google_news(stock: StockConfig, max_articles: int = 8) -> list[NewsArt
         return []
 
 
+def _is_recent(article: NewsArticle, max_age_hours: int = 24) -> bool:
+    """Check if an article was published within the last max_age_hours."""
+    if article.published is None:
+        return True
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    pub = article.published
+    if pub.tzinfo is None:
+        pub = pub.replace(tzinfo=timezone.utc)
+    return pub >= cutoff
+
+
 def fetch_all_news(stock: StockConfig, max_per_source: int = 8) -> list[NewsArticle]:
     yf_news = fetch_yfinance_news(stock)
     google_news = fetch_google_news(stock, max_articles=max_per_source)
@@ -135,9 +146,11 @@ def fetch_all_news(stock: StockConfig, max_per_source: int = 8) -> list[NewsArti
             seen_titles.add(normalized)
             deduplicated.append(article)
 
-    relevant = [a for a in deduplicated if _is_relevant(a.title, stock)]
+    recent = [a for a in deduplicated if _is_recent(a)]
+
+    relevant = [a for a in recent if _is_relevant(a.title, stock)]
 
     if len(relevant) < 3:
-        relevant = deduplicated[:8]
+        relevant = recent[:8]
 
     return relevant[:10]
