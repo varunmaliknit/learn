@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 import feedparser
@@ -13,6 +14,30 @@ from stock_agent.models import NewsArticle, StockConfig
 logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=en&gl=US&ceid=US:en"
+
+
+def _is_relevant(title: str, stock: StockConfig) -> bool:
+    """Check if a headline is relevant to the specific stock."""
+    title_lower = title.lower()
+    symbol_clean = stock.symbol.replace(".L", "").replace(".AX", "").replace("=F", "").lower()
+
+    name_lower = (stock.name or "").lower()
+    name_words = [w for w in name_lower.split() if len(w) > 2]
+
+    if symbol_clean in re.split(r"[\s\(\)\[\]:,;'\"\-/]", title_lower):
+        return True
+
+    if name_lower and name_lower in title_lower:
+        return True
+
+    if name_words and any(w in title_lower for w in name_words if len(w) > 3):
+        return True
+
+    ticker_pattern = rf'\b{re.escape(stock.symbol.upper())}\b'
+    if re.search(ticker_pattern, title):
+        return True
+
+    return False
 
 
 def fetch_yfinance_news(stock: StockConfig) -> list[NewsArticle]:
@@ -66,9 +91,9 @@ def fetch_yfinance_news(stock: StockConfig) -> list[NewsArticle]:
         return []
 
 
-def fetch_google_news(stock: StockConfig, max_articles: int = 5) -> list[NewsArticle]:
+def fetch_google_news(stock: StockConfig, max_articles: int = 8) -> list[NewsArticle]:
     search_name = stock.name or stock.symbol
-    query = f"{search_name} stock"
+    query = f'"{search_name}" stock OR shares OR earnings OR dividend'
     url = GOOGLE_NEWS_RSS.format(query=requests.utils.quote(query))
     try:
         feed = feedparser.parse(url)
@@ -98,7 +123,7 @@ def fetch_google_news(stock: StockConfig, max_articles: int = 5) -> list[NewsArt
         return []
 
 
-def fetch_all_news(stock: StockConfig, max_per_source: int = 5) -> list[NewsArticle]:
+def fetch_all_news(stock: StockConfig, max_per_source: int = 8) -> list[NewsArticle]:
     yf_news = fetch_yfinance_news(stock)
     google_news = fetch_google_news(stock, max_articles=max_per_source)
 
@@ -110,4 +135,9 @@ def fetch_all_news(stock: StockConfig, max_per_source: int = 5) -> list[NewsArti
             seen_titles.add(normalized)
             deduplicated.append(article)
 
-    return deduplicated
+    relevant = [a for a in deduplicated if _is_relevant(a.title, stock)]
+
+    if len(relevant) < 3:
+        relevant = deduplicated[:8]
+
+    return relevant[:10]

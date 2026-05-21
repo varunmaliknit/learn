@@ -27,6 +27,18 @@ def _sentiment_emoji(s: Sentiment) -> str:
     return {"bullish": "🟢", "bearish": "🔴", "neutral": "⚪"}.get(s.value, "⚪")
 
 
+def _sentiment_label(s: Sentiment) -> str:
+    return {"bullish": "Bullish", "bearish": "Bearish", "neutral": "Neutral"}.get(s.value, "Neutral")
+
+
+def _sentiment_bg(s: Sentiment) -> str:
+    return {"bullish": "#dcfce7", "bearish": "#fee2e2", "neutral": "#f3f4f6"}.get(s.value, "#f3f4f6")
+
+
+def _sentiment_border(s: Sentiment) -> str:
+    return {"bullish": "#22c55e", "bearish": "#ef4444", "neutral": "#d1d5db"}.get(s.value, "#d1d5db")
+
+
 def _change_color(pct: float) -> str:
     if pct > 0:
         return "#22c55e"
@@ -98,6 +110,27 @@ def build_html_digest(data: dict, config: AppConfig) -> str:
 
     date_str = generated_at.strftime("%A, %B %d, %Y")
 
+    # --- Action Items (stocks flagged by AI as needing attention) ---
+    action_items = [ns for ns in news_summaries if "⚡ ACTION:" in ns.ai_summary]
+    action_html = ""
+    if action_items:
+        items_html = ""
+        for ns in action_items:
+            action_line = ns.ai_summary.split("\n")[0].replace("⚡ ACTION: ", "")
+            bg = _sentiment_bg(ns.sentiment)
+            border = _sentiment_border(ns.sentiment)
+            items_html += f"""
+            <div style="border-left:4px solid {border};padding:10px 14px;margin-bottom:8px;background:{bg};border-radius:0 6px 6px 0;">
+              <strong style="color:#1f2937;">{ns.name} ({ns.symbol})</strong>
+              <span style="margin-left:8px;font-size:12px;padding:2px 8px;border-radius:10px;background:{border};color:#fff;">{_sentiment_label(ns.sentiment)}</span>
+              <p style="margin:6px 0 0 0;color:#374151;font-size:14px;">{action_line}</p>
+            </div>"""
+        action_html = f"""
+        <div style="margin-bottom:28px;">
+          <h2 style="color:#dc2626;font-size:18px;margin-bottom:12px;">🔔 Needs Your Attention</h2>
+          {items_html}
+        </div>"""
+
     # --- Price table rows ---
     price_rows = ""
     for p in prices:
@@ -127,35 +160,66 @@ def build_html_digest(data: dict, config: AppConfig) -> str:
             </div>"""
         alerts_html = f"""
         <div style="margin-bottom:28px;">
-          <h2 style="color:#1f2937;font-size:18px;margin-bottom:12px;">⚠️ Alerts</h2>
+          <h2 style="color:#1f2937;font-size:18px;margin-bottom:12px;">⚠️ Price & Volume Alerts</h2>
           {alert_items}
         </div>"""
 
-    # --- News summaries ---
+    # --- News summaries (redesigned) ---
     news_html = ""
     for ns in news_summaries:
         if not ns.articles and not ns.ai_summary:
             continue
         emoji = _sentiment_emoji(ns.sentiment)
+        bg = _sentiment_bg(ns.sentiment)
+        border = _sentiment_border(ns.sentiment)
+
+        summary_text = ns.ai_summary
+        summary_parts = summary_text.split("\n\n", 1)
+        action_banner = ""
+        main_summary = summary_text
+        if len(summary_parts) == 2 and summary_parts[0].startswith("⚡"):
+            action_banner = f"""<div style="background:#fef3c7;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:13px;color:#92400e;font-weight:600;">{summary_parts[0]}</div>"""
+            main_summary = summary_parts[1]
+
         key_points_html = ""
         if ns.key_points:
-            pts = "".join(f"<li style='margin-bottom:4px;'>{kp}</li>" for kp in ns.key_points)
-            key_points_html = f"<ul style='margin:8px 0;padding-left:20px;color:#374151;'>{pts}</ul>"
+            pts = ""
+            for kp in ns.key_points:
+                tag_color = "#6b7280"
+                if kp.startswith("[EARNINGS]"):
+                    tag_color = "#7c3aed"
+                elif kp.startswith("[ANALYST]"):
+                    tag_color = "#2563eb"
+                elif kp.startswith("[CORPORATE]"):
+                    tag_color = "#0891b2"
+                elif kp.startswith("[MARKET]"):
+                    tag_color = "#059669"
+                elif kp.startswith("[RISK]"):
+                    tag_color = "#dc2626"
+                elif kp.startswith("[DIVIDEND]"):
+                    tag_color = "#ca8a04"
+                pts += f"<li style='margin-bottom:4px;color:#374151;'><span style='color:{tag_color};font-weight:600;'>{kp.split(']')[0]}]</span>{kp.split(']', 1)[1] if ']' in kp else kp}</li>"
+            key_points_html = f"<ul style='margin:8px 0 0 0;padding-left:20px;font-size:13px;'>{pts}</ul>"
 
-        article_links = ""
+        source_links = ""
         if ns.articles:
             links = "".join(
-                f"<li style='margin-bottom:3px;'><a href='{a.url}' style='color:#2563eb;text-decoration:none;'>{a.title}</a> <span style='color:#9ca3af;font-size:12px;'>— {a.source}</span></li>"
-                for a in ns.articles[:5]
+                f"<a href='{a.url}' style='color:#2563eb;text-decoration:none;font-size:12px;margin-right:12px;'>{a.source}</a>"
+                for a in ns.articles[:3]
             )
-            article_links = f"<ul style='margin:8px 0;padding-left:20px;font-size:13px;'>{links}</ul>"
+            source_links = f"<div style='margin-top:8px;padding-top:6px;border-top:1px solid #e5e7eb;'><span style='color:#9ca3af;font-size:11px;'>Sources: </span>{links}</div>"
 
         news_html += f"""
-        <div style="margin-bottom:20px;padding:14px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
-          <h3 style="margin:0 0 6px 0;font-size:15px;color:#1f2937;">{emoji} {ns.name} ({ns.symbol}) — {ns.sentiment.value.title()}</h3>
-          <p style="margin:0 0 8px 0;color:#374151;font-size:14px;">{ns.ai_summary}</p>
+        <div style="margin-bottom:16px;padding:14px;background:{bg};border-radius:8px;border:1px solid {border};">
+          <div style="display:flex;align-items:center;margin-bottom:8px;">
+            <span style="font-size:16px;margin-right:6px;">{emoji}</span>
+            <strong style="font-size:15px;color:#1f2937;">{ns.name} ({ns.symbol})</strong>
+            <span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:10px;background:{border};color:#fff;">{_sentiment_label(ns.sentiment)}</span>
+          </div>
+          {action_banner}
+          <p style="margin:0 0 4px 0;color:#374151;font-size:14px;line-height:1.5;">{main_summary}</p>
           {key_points_html}
-          {article_links}
+          {source_links}
         </div>"""
 
     # --- Earnings ---
@@ -229,6 +293,8 @@ def build_html_digest(data: dict, config: AppConfig) -> str:
 
     <div style="padding:24px 28px;">
 
+      {action_html}
+
       <!-- Portfolio Overview -->
       <div style="margin-bottom:28px;">
         <h2 style="color:#1f2937;font-size:18px;margin-bottom:12px;">Portfolio Overview</h2>
@@ -248,7 +314,7 @@ def build_html_digest(data: dict, config: AppConfig) -> str:
 
       <!-- News Summaries -->
       <div style="margin-bottom:28px;">
-        <h2 style="color:#1f2937;font-size:18px;margin-bottom:12px;">📰 News & Analysis</h2>
+        <h2 style="color:#1f2937;font-size:18px;margin-bottom:12px;">📰 AI News Analysis</h2>
         {news_html}
       </div>
 
@@ -281,6 +347,15 @@ def build_text_digest(data: dict, config: AppConfig) -> str:
     lines.append(f"DAILY PORTFOLIO DIGEST — {generated_at.strftime('%A, %B %d, %Y')}")
     lines.append("=" * 60)
 
+    # Action items first
+    action_items = [ns for ns in news_summaries if "⚡ ACTION:" in ns.ai_summary]
+    if action_items:
+        lines.append("\n🔔 NEEDS YOUR ATTENTION")
+        lines.append("-" * 40)
+        for ns in action_items:
+            action_line = ns.ai_summary.split("\n")[0]
+            lines.append(f"  {ns.name} ({ns.symbol}) — {action_line}")
+
     lines.append("\nPORTFOLIO OVERVIEW")
     lines.append("-" * 40)
     for p in prices:
@@ -291,31 +366,31 @@ def build_text_digest(data: dict, config: AppConfig) -> str:
         )
 
     if alerts:
-        lines.append("\nALERTS")
+        lines.append("\n⚠️  PRICE & VOLUME ALERTS")
         lines.append("-" * 40)
         for a in alerts:
             lines.append(f"  [{a.severity.upper()}] {a.headline}")
             lines.append(f"    {a.details}")
 
-    lines.append("\nNEWS & ANALYSIS")
+    lines.append("\n📰 AI NEWS ANALYSIS")
     lines.append("-" * 40)
     for ns in news_summaries:
         if not ns.articles and not ns.ai_summary:
             continue
-        lines.append(f"\n  {ns.name} ({ns.symbol}) — {ns.sentiment.value.title()}")
+        lines.append(f"\n  {_sentiment_emoji(ns.sentiment)} {ns.name} ({ns.symbol}) — {ns.sentiment.value.title()}")
         lines.append(f"  {ns.ai_summary}")
         if ns.key_points:
             for kp in ns.key_points:
                 lines.append(f"    • {kp}")
 
     if earnings:
-        lines.append("\nUPCOMING EARNINGS")
+        lines.append("\n📅 UPCOMING EARNINGS")
         lines.append("-" * 40)
         for e in earnings:
             lines.append(f"  {e.name} ({e.symbol}): {e.date.strftime('%b %d, %Y')}")
 
     if dividends:
-        lines.append("\nDIVIDEND INFO")
+        lines.append("\n💰 DIVIDEND INFO")
         lines.append("-" * 40)
         for d in dividends:
             yield_str = f"{d.dividend_yield:.2f}%" if d.dividend_yield else "N/A"
