@@ -2,48 +2,32 @@ name: Daily Portfolio Digest
 
 on:
   schedule:
-    # 7 AM UTC = 8 AM BST (UK summer time)
+    # 7 AM UTC = 8 AM BST (UK summer, Mar-Oct)
+    # During GMT (Nov-Feb) this will arrive at 7 AM UK time.
+    # We use a single cron because GitHub Actions delays scheduled
+    # runs by up to 1-3 hours, making strict time checks unreliable.
     - cron: '0 7 * * *'
-    # 8 AM UTC = 8 AM GMT (UK winter time)
-    - cron: '0 8 * * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # Allow manual trigger from Actions tab
 
 jobs:
   send-digest:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check if 8 AM UK time
-        id: timecheck
-        run: |
-          UK_HOUR=$(TZ="Europe/London" date +%H)
-          echo "UK hour is: $UK_HOUR"
-          if [ "$UK_HOUR" = "08" ]; then
-            echo "send=true" >> $GITHUB_OUTPUT
-          else
-            echo "send=false" >> $GITHUB_OUTPUT
-            echo "Skipping — not 8 AM UK time"
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.timecheck.outputs.send == 'true' || github.event_name == 'workflow_dispatch'
 
       - name: Set up Python
-        if: steps.timecheck.outputs.send == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
-        if: steps.timecheck.outputs.send == 'true' || github.event_name == 'workflow_dispatch'
         run: pip install -e .
 
       - name: Copy config
-        if: steps.timecheck.outputs.send == 'true' || github.event_name == 'workflow_dispatch'
         run: cp portfolio.yaml.example portfolio.yaml
 
       - name: Send daily digest
-        if: steps.timecheck.outputs.send == 'true' || github.event_name == 'workflow_dispatch'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SMTP_HOST: smtp.gmail.com
