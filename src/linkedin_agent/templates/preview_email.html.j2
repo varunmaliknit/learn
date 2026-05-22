@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LinkedIn draft — {{ draft.draft_id }}</title>
+</head>
+<body style="margin:0; padding:0; background:#f6f7f9; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif; color:#1f2328;">
+  <div style="max-width:640px; margin:0 auto; padding:24px 16px;">
+
+    <h1 style="margin:0 0 8px 0; font-size:20px; font-weight:600;">
+      LinkedIn draft — {{ draft.draft_id }}
+    </h1>
+    <p style="margin:0 0 20px 0; color:#57606a; font-size:14px;">
+      One click to publish. Edit on GitHub if you want to tweak first.
+    </p>
+
+    <div style="margin:0 0 20px 0; text-align:left;">
+      <a href="{{ approve_url }}"
+         style="display:inline-block; background:#1f883d; color:#ffffff; text-decoration:none; padding:12px 20px; border-radius:6px; font-weight:600; font-size:15px; margin-right:8px;">
+        Approve &amp; post
+      </a>
+      <a href="{{ issue_edit_url }}"
+         style="display:inline-block; background:#ffffff; color:#1f2328; text-decoration:none; padding:11px 18px; border-radius:6px; font-weight:600; font-size:15px; border:1px solid #d0d7de; margin-right:8px;">
+        Edit on GitHub
+      </a>
+      <a href="{{ reject_url }}"
+         style="display:inline-block; background:#ffffff; color:#cf222e; text-decoration:none; padding:11px 18px; border-radius:6px; font-weight:600; font-size:15px; border:1px solid #d0d7de;">
+        Reject
+      </a>
+    </div>
+
+    <div style="background:#ffffff; border:1px solid #d0d7de; border-radius:8px; padding:20px; margin:0 0 20px 0;">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#57606a; margin-bottom:10px;">
+        Preview · as it will appear on LinkedIn
+      </div>
+      <pre style="white-space:pre-wrap; word-wrap:break-word; margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:15px; line-height:1.55; color:#1f2328;">{{ draft.full_text() }}</pre>
+    </div>
+
+    <div style="background:#ffffff; border:1px solid #d0d7de; border-radius:8px; padding:16px 20px; margin:0 0 20px 0;">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#57606a; margin-bottom:10px;">
+        Sources
+      </div>
+      <ol style="margin:0; padding-left:20px;">
+        {% for t in draft.trends %}
+        <li style="margin-bottom:8px; font-size:14px;">
+          <a href="{{ t.url }}" style="color:#0969da; text-decoration:none;">{{ t.title }}</a>
+          <span style="color:#57606a;"> — impact {{ "%.1f"|format(t.impact_score) }} · {{ t.short_source() }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <p style="color:#57606a; font-size:13px; margin:0;">
+      Approval is one click; if you opened the GitHub issue and edited the post, your edits will be honored when you approve.
+      Issue: <a href="{{ issue_url }}" style="color:#0969da;">{{ issue_url }}</a>
+    </p>
+
+  </div>
+</body>
+</html>

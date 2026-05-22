@@ -1,0 +1,16 @@
+name = "linkedin-approver"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Non-secret config. Set the actual values with:
+#   wrangler secret put APPROVAL_HMAC_SECRET
+#   wrangler secret put GITHUB_TOKEN
+# and the rest below via wrangler.toml `[vars]` (non-secret) — owner/repo aren't sensitive.
+
+[vars]
+GITHUB_OWNER = "varunmaliknit"
+GITHUB_REPO  = "learn"
+
+# Workers Logs are useful for debugging signature failures.
+[observability]
+enabled = true

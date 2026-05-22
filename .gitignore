@@ -28,3 +28,9 @@ Thumbs.db
 
 # Config (contains secrets)
 portfolio.yaml
+voice.yaml
+
+# Cloudflare Worker
+worker/node_modules/
+worker/.wrangler/
+worker/dist/

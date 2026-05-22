@@ -1,0 +1,16 @@
+{
+  "name": "linkedin-approver-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that verifies signed approve/reject URLs from the daily LinkedIn draft email and fires a repository_dispatch event on GitHub.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.78.0"
+  }
+}

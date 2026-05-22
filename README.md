@@ -1,4 +1,13 @@
-# 📊 Stock Portfolio Notification Agent
+# 📊 Personal Agents
+
+Two daily agents that run as GitHub Actions:
+
+1. **Stock Portfolio Agent** — daily email digest of price moves, news, earnings, and dividends. See below.
+2. **LinkedIn AI-Trends Post Agent** — drafts a daily LinkedIn post on the latest AI trends, emails you a one-click approval, and posts it for you. See [`docs/LINKEDIN_AGENT.md`](docs/LINKEDIN_AGENT.md).
+
+---
+
+## 📊 Stock Portfolio Notification Agent
 
 A Python agent that monitors your stock portfolio and sends you a **daily email digest** at 8 AM UK time with price movements, news summaries (powered by OpenAI), earnings calendar, dividend info, and alerts.
 
