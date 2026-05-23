@@ -91,6 +91,9 @@ class AppConfig:
     github: GitHubConfig = field(default_factory=GitHubConfig)
     approval: ApprovalConfig = field(default_factory=ApprovalConfig)
     min_impact_score_to_post: float = 6.0
+    # Per-trend quality floor. EVERY one of the 3 trends in a post must score
+    # at least this, otherwise skip the day rather than padding with weak news.
+    min_trend_quality_floor: float = 5.0
     extra_rss_feeds: list[str] = field(default_factory=list)
 
 
@@ -159,4 +162,5 @@ def load_config(voice_path: str | Path | None = "voice.yaml") -> AppConfig:
         github=github,
         approval=approval,
         min_impact_score_to_post=float(_env("LINKEDIN_AGENT_MIN_IMPACT", "6.0")),
+        min_trend_quality_floor=float(_env("LINKEDIN_AGENT_QUALITY_FLOOR", "5.0")),
     )

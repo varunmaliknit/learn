@@ -7,8 +7,37 @@ marker, trims to the configured max length, and reconciles hashtags.
 from __future__ import annotations
 
 import re
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from linkedin_agent.config import FormattingConfig
+
+# Query-string keys we always strip from any URL we publish. These are tracking
+# parameters added by the source (e.g. OpenAI web_search appends utm_source=openai)
+# or by aggregators. Stripping them keeps published links clean.
+_TRACKING_PARAM_PREFIXES: tuple[str, ...] = (
+    "utm_",
+    "ref_",
+    "_ref",
+)
+_TRACKING_PARAM_EXACT: frozenset[str] = frozenset(
+    {
+        "ref",
+        "refsrc",
+        "fbclid",
+        "gclid",
+        "mc_cid",
+        "mc_eid",
+        "yclid",
+        "igshid",
+        "mkt_tok",
+        "vero_id",
+        "oly_anon_id",
+        "oly_enc_id",
+        "hsCtaTracking",
+        "hsa_acc",
+        "hsa_cam",
+    }
+)
 
 # Common emoji ranges. We strip everything matching these EXCEPT the configured
 # bullet marker (added back after stripping).
@@ -79,9 +108,35 @@ def enforce_length(body: str, max_chars: int) -> str:
     return cut.rstrip()
 
 
+def _strip_tracking(url: str) -> str:
+    """Remove utm_*, ref, fbclid, gclid, mc_*, etc. from the URL's query."""
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return url
+    if not parts.query:
+        return url
+    kept = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k not in _TRACKING_PARAM_EXACT
+        and not any(k.startswith(p) for p in _TRACKING_PARAM_PREFIXES)
+    ]
+    new_query = urlencode(kept, doseq=True)
+    return urlunparse(parts._replace(query=new_query))
+
+
+_URL_RE = re.compile(r"https?://[^\s<>)\]\"']+")
+
+
 def tidy_urls(body: str) -> str:
-    """Strip markdown link syntax — LinkedIn shows raw URLs."""
+    """Clean up URLs in the post:
+
+    1. Strip markdown link syntax — LinkedIn shows raw URLs.
+    2. Strip tracking params (utm_*, ref, fbclid, gclid, etc.) from every URL.
+    """
     body = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r"\1 \2", body)
+    body = _URL_RE.sub(lambda m: _strip_tracking(m.group(0)), body)
     return body
 
 

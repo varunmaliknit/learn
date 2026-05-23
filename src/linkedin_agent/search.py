@@ -34,59 +34,102 @@ DEFAULT_RSS_FEEDS = [
 ]
 
 
-WEB_SEARCH_PROMPT = """\
-Search the web for the most important AI news, research, and product announcements \
-from the last 24 hours.
+def _web_search_prompt(now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(hours=24)).strftime("%Y-%m-%d")
+    return f"""\
+Today's date is {today} (UTC). Search the web for the most important AI news, \
+research, and product announcements PUBLISHED in the last 24 hours \
+(between {yesterday} and {today} UTC).
+
+HARD RULE on recency:
+- Only include items whose original publication date is within the last 24 hours.
+- If the original article was published earlier and only re-shared today, EXCLUDE it.
+- If you cannot verify the publication date from the search result, EXCLUDE the item.
+- Prefer the original primary source over aggregator re-coverage.
 
 Focus on items that are:
-- High-impact (large model release, major funding, regulatory move, notable research result, \
-significant safety or capability development, big product launch by a major lab)
-- Time-sensitive (genuinely from the last ~24 hours, not older recycled coverage)
-- Verifiable (real URLs to reputable sources — labs, major tech publications, papers)
+- High-impact (major model release, large funding round, regulatory move, notable \
+research result, significant safety or capability development, big product launch \
+by a major lab or platform)
+- Verifiable (real URLs to reputable sources — labs, major tech publications, \
+official blog posts, arXiv)
 
-Return your findings as a clear list with for each item:
+Return your findings as a clear list. For each item include:
 1. Title
 2. Source URL
 3. Source name
-4. One-line factual summary (what happened)
-5. Why it matters in 1-2 sentences (for an educated technical reader)
+4. Publication date (YYYY-MM-DD format)
+5. One-line factual summary (what happened)
+6. Why it matters in 1-2 sentences (for an educated technical reader)
 
-Aim for 5-8 items. Skip anything older than 36 hours."""
+Aim for 5-8 items, ALL within the 24-hour window. If you cannot find 5 items \
+that genuinely fit, return fewer rather than padding with older news."""
 
 
-STRUCTURE_PROMPT = """\
+WEB_SEARCH_PROMPT = _web_search_prompt()  # default for back-compat
+
+
+def _structure_prompt(now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    yesterday = (now - timedelta(hours=24)).strftime("%Y-%m-%d")
+    today = now.strftime("%Y-%m-%d")
+    return f"""\
 From the previous search results, extract the top high-impact AI items as STRICT JSON.
 
+Only include items whose publication date is between {yesterday} and {today} (UTC). \
+DROP anything older even if it appeared in the search results.
+
 Output ONLY valid JSON matching this schema, no prose:
-{
+{{
   "trends": [
-    {
+    {{
       "title": "string",
       "url": "string (must be a real http(s) URL from the search results)",
       "source": "string (publication or organization name)",
+      "published_at": "YYYY-MM-DD or empty if unknown",
       "one_line_summary": "string (max 120 chars, factual, no hype)",
       "why_it_matters": "string (1-2 sentences, max 240 chars)",
       "impact_score": number (0.0-10.0; 10 = once-a-year-class news)
-    }
+    }}
   ]
-}
+}}
 
 Rules:
 - Include at most 8 items, ordered by impact_score descending.
 - impact_score should be calibrated: 9-10 reserved for genuinely huge news; \
 6-8 for solid but routine; below 6 for marginal items.
 - DROP any item whose URL you cannot cite from the search results.
+- DROP any item dated before {yesterday}.
 - DROP duplicates / multiple articles about the same underlying event (keep the strongest source).
-- Prefer primary sources (lab blogs, papers) over aggregator coverage."""
+- STRONGLY prefer primary sources. Primary = the org/lab/paper itself: openai.com, \
+anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, nature.com, \
+sec.gov filings, official company press releases, official policy / regulatory body sites.
+- Aggregators (random "ai-news-recap" blogs, content farms, generic "top AI news" \
+roundup pages, sites whose URL contains things like /ai-news-may-DD-YYYY/) are NEVER \
+acceptable when a primary source exists for the same event. If the only available source \
+is an aggregator and the event is genuinely from the last 24h, you may include it BUT \
+cap its impact_score at 5.0 to reflect the lower confidence.
+- Reputable trade press (techcrunch.com, theverge.com, bloomberg.com, reuters.com, \
+ft.com, wsj.com, theinformation.com, semianalysis.com) is acceptable as a primary source \
+when the underlying event is news of a deal / regulatory / market move and no \
+better source exists."""
+
+
+STRUCTURE_PROMPT = _structure_prompt()  # default for back-compat
 
 
 def _structured_trends_from_text(client: OpenAI, model: str, search_text: str) -> list[Trend]:
     """Second LLM pass: turn the free-form search result into JSON trends."""
+    # Import locally to avoid a hard formatter↔search circular at module load.
+    from linkedin_agent.formatter import _strip_tracking
+
     response = client.chat.completions.create(
         model=model,
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": STRUCTURE_PROMPT},
+            {"role": "system", "content": _structure_prompt()},
             {"role": "user", "content": search_text},
         ],
         temperature=0.1,
@@ -98,17 +141,42 @@ def _structured_trends_from_text(client: OpenAI, model: str, search_text: str) -
         logger.warning("structure pass returned invalid JSON; trying to recover")
         data = {}
 
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
+
     trends: list[Trend] = []
     for item in data.get("trends", []):
         try:
+            published_raw = str(item.get("published_at", "")).strip()
+            published_at: datetime | None = None
+            if published_raw:
+                try:
+                    published_at = datetime.strptime(published_raw, "%Y-%m-%d").replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    published_at = None
+
+            # Hard recency gate: if we have a publication date and it's older
+            # than 36 hours, drop the item. (36h not 24h to allow for timezone
+            # noise and end-of-day publishes.)
+            if published_at is not None and published_at < cutoff:
+                logger.info(
+                    "dropping trend %r as too old: published_at=%s, cutoff=%s",
+                    item.get("title"),
+                    published_at.isoformat(),
+                    cutoff.isoformat(),
+                )
+                continue
+
             trends.append(
                 Trend(
                     title=str(item["title"]).strip(),
-                    url=str(item["url"]).strip(),
+                    url=_strip_tracking(str(item["url"]).strip()),
                     source=str(item.get("source", "")).strip(),
                     one_line_summary=str(item["one_line_summary"]).strip(),
                     why_it_matters=str(item["why_it_matters"]).strip(),
                     impact_score=float(item.get("impact_score", 0.0)),
+                    published_at=published_at,
                 )
             )
         except (KeyError, ValueError, TypeError):
@@ -122,7 +190,7 @@ def _openai_web_search(client: OpenAI, model: str) -> str:
     response = client.responses.create(
         model=model,
         tools=[{"type": "web_search_preview"}],
-        input=WEB_SEARCH_PROMPT,
+        input=_web_search_prompt(),
     )
     # The Responses API returns a list of output items; `output_text` is the
     # convenience accessor for the concatenated assistant text.

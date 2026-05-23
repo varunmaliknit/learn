@@ -102,6 +102,28 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
         logger.warning("Could not assemble 3 trends; skipping today.")
         return _send_skip_email(cfg, draft_id, reason="fewer than 3 viable trends found")
 
+    # Quality floor: every trend used in the post must score at least the
+    # per-trend threshold. If we can't muster 3 trends that clear the bar,
+    # skip the day rather than padding the post with weak news.
+    floor = cfg.min_trend_quality_floor
+    strong_enough = [t for t in top[:3] if t.impact_score >= floor]
+    if len(strong_enough) < 3:
+        scores = ", ".join(f"{t.impact_score:.1f}" for t in top[:3])
+        logger.info(
+            "Top 3 trend scores [%s] below per-trend floor %.1f — skipping today.",
+            scores,
+            floor,
+        )
+        return _send_skip_email(
+            cfg,
+            draft_id,
+            reason=(
+                f"only {len(strong_enough)}/3 trends cleared the quality floor of "
+                f"{floor:.1f} (scores were: {scores}). "
+                f"Today's AI news isn't strong enough for a post in your voice."
+            ),
+        )
+
     body, hashtags = writer.draft_post(
         cfg.openai_api_key, cfg.openai_model, top, cfg.voice, cfg.formatting
     )

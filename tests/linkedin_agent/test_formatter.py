@@ -78,6 +78,42 @@ def test_tidy_urls_strips_markdown_link_syntax() -> None:
     assert "[" not in out and "](" not in out
 
 
+def test_tidy_urls_strips_utm_params() -> None:
+    body = "See https://example.com/x?utm_source=openai&utm_medium=email here."
+    out = tidy_urls(body)
+    assert "utm_source" not in out
+    assert "utm_medium" not in out
+    assert "https://example.com/x" in out
+
+
+def test_tidy_urls_strips_fbclid_gclid_and_other_tracking() -> None:
+    body = (
+        "A https://a.com/page?fbclid=abc&keep=yes\n"
+        "B https://b.com/page?gclid=xyz\n"
+        "C https://c.com/page?mc_cid=1&mc_eid=2&ref=share\n"
+    )
+    out = tidy_urls(body)
+    assert "fbclid" not in out
+    assert "gclid" not in out
+    assert "mc_cid" not in out
+    assert "mc_eid" not in out
+    assert "ref=share" not in out
+    assert "keep=yes" in out  # non-tracking params preserved
+
+
+def test_tidy_urls_preserves_legitimate_query_params() -> None:
+    body = "See https://example.com/search?q=ai&page=2 for the listing."
+    out = tidy_urls(body)
+    assert "q=ai" in out
+    assert "page=2" in out
+
+
+def test_tidy_urls_handles_url_without_query() -> None:
+    body = "Visit https://example.com/x for details."
+    out = tidy_urls(body)
+    assert "https://example.com/x" in out
+
+
 def test_count_required_urls() -> None:
     body = "https://a.com\nhttps://b.com\nhttps://c.com"
     urls = ["https://a.com", "https://b.com", "https://c.com"]
