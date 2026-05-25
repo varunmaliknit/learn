@@ -28,7 +28,7 @@ Thumbs.db
 
 # Config (contains secrets)
 portfolio.yaml
-voice.yaml
+# voice.yaml intentionally tracked: it is non-secret persona/few-shot anchors
 
 # Cloudflare Worker
 worker/node_modules/
