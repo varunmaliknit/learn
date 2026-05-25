@@ -1,0 +1,68 @@
+name: LinkedIn Weekly Draft
+
+on:
+  schedule:
+    # 14:00 UTC every Monday. Aim for a Monday-morning post in US business hours
+    # (09:00 ET / 06:00 PT). Adjust the cron to taste.
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+    inputs:
+      draft_id:
+        description: 'Override draft id (default: today UTC, format YYYY-MM-DD)'
+        required: false
+
+# The workflow is gated behind the LINKEDIN_AGENT_ENABLED variable so it is
+# inert until you flip the switch. Set it to "true" in:
+#   Repo Settings → Secrets and variables → Actions → Variables tab
+#   Name:  LINKEDIN_AGENT_ENABLED
+#   Value: true
+
+jobs:
+  draft:
+    if: vars.LINKEDIN_AGENT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Provision voice.yaml
+        run: |
+          if [ ! -f voice.yaml ] && [ -f voice.yaml.example ]; then
+            cp voice.yaml.example voice.yaml
+          fi
+
+      - name: Generate draft + send approval email
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: '587'
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.SMTP_USER }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_MEMBER_URN: ${{ secrets.LINKEDIN_MEMBER_URN }}
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          APPROVAL_HMAC_SECRET: ${{ secrets.APPROVAL_HMAC_SECRET }}
+          APPROVER_WORKER_URL: ${{ secrets.APPROVER_WORKER_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINKEDIN_AGENT_MIN_IMPACT: ${{ vars.LINKEDIN_AGENT_MIN_IMPACT || '6.0' }}
+          LINKEDIN_AGENT_QUALITY_FLOOR: ${{ vars.LINKEDIN_AGENT_QUALITY_FLOOR || '5.0' }}
+          LINKEDIN_AGENT_LOOKBACK_HOURS: ${{ vars.LINKEDIN_AGENT_LOOKBACK_HOURS || '168' }}
+        run: |
+          if [ -n "${{ github.event.inputs.draft_id }}" ]; then
+            linkedin-agent draft --draft-id "${{ github.event.inputs.draft_id }}"
+          else
+            linkedin-agent draft
+          fi
