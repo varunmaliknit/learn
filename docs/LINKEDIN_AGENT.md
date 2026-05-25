@@ -1,11 +1,13 @@
 # LinkedIn AI-Trends Post Agent
 
-A daily agent that:
+A scheduled agent that:
 
-1. Web-searches for the highest-impact AI news from the **last 24 hours**.
+1. Web-searches for the highest-impact AI trends from the **last 7 days** (configurable — set `LINKEDIN_AGENT_LOOKBACK_HOURS=24` for daily).
 2. Drafts a LinkedIn post in your voice (3 trends, links, hashtags, formatting baked in).
 3. Emails you a preview with a big **Approve & Post** button.
 4. On approve — one click in the email — publishes to your LinkedIn profile and emails you the live link.
+
+**Default cadence**: weekly (Monday 14:00 UTC). To switch to daily, change the cron in `.github/workflows/linkedin-weekly-draft.yml` and set `LINKEDIN_AGENT_LOOKBACK_HOURS=24`.
 
 No new servers to host: GitHub Actions for the cron + a tiny Cloudflare Worker (free) for the one-click button.
 
@@ -14,7 +16,7 @@ No new servers to host: GitHub Actions for the cron + a tiny Cloudflare Worker (
 ## How approval works
 
 ```
-GitHub Actions (cron, daily)
+GitHub Actions (cron, weekly by default)
    │
    ▼
 [draft] → opens a GitHub Issue with the draft as the body
@@ -98,8 +100,10 @@ In your repo → Settings → Secrets and variables → Actions:
 |---|---|
 | `LINKEDIN_AGENT_ENABLED` | `true` |
 | `LINKEDIN_AGENT_MIN_IMPACT` | `6.0` (optional override; 0–10 scale) |
+| `LINKEDIN_AGENT_QUALITY_FLOOR` | `5.0` (optional override; min score every used trend must clear) |
+| `LINKEDIN_AGENT_LOOKBACK_HOURS` | `168` (weekly; set to `24` for daily) |
 
-The daily workflow is **gated on `LINKEDIN_AGENT_ENABLED=true`** — it does nothing
+The weekly workflow is **gated on `LINKEDIN_AGENT_ENABLED=true`** — it does nothing
 until you set this variable. Use this to keep the workflow inert while you finish setup.
 
 ### 6. (Optional) Test it
@@ -108,21 +112,22 @@ until you set this variable. Use this to keep the workflow inert while you finis
 # Dry run — prints the draft without emailing or opening an issue
 linkedin-agent draft --dry-run
 
-# Trigger the daily workflow manually
-gh workflow run linkedin-daily-draft.yml
+# Trigger the weekly workflow manually (works any time, doesn't have to be Monday)
+gh workflow run linkedin-weekly-draft.yml
 ```
 
 ---
 
-## Daily flow (after setup)
+## Weekly flow (after setup)
 
-- 07:00 UTC: `linkedin-daily-draft.yml` runs.
-- ~07:01 UTC: you get an email with the rendered preview.
+- Monday 14:00 UTC: `linkedin-weekly-draft.yml` runs.
+- ~14:01 UTC: you get an email with the rendered preview.
 - You click **Approve** → ~5 seconds later your post is live on LinkedIn.
 - You get a confirmation email with the live URL.
 
-If the day has no genuinely high-impact AI news (top trend impact < `LINKEDIN_AGENT_MIN_IMPACT`),
-the agent skips posting and just emails you a short note instead of filler content.
+If the week has no genuinely high-impact AI trends (top trend impact < `LINKEDIN_AGENT_MIN_IMPACT`,
+or fewer than 3 trends clearing `LINKEDIN_AGENT_QUALITY_FLOOR`), the agent skips posting and just
+emails you a short note instead of filler content.
 
 ---
 
@@ -143,7 +148,7 @@ Tweak `src/linkedin_agent/config.py:FormattingConfig` or your `voice.yaml` to ad
 
 ## Token rotation
 
-LinkedIn access tokens last about **60 days**. When yours expires, the daily run will
+LinkedIn access tokens last about **60 days**. When yours expires, the next run will
 log a 401 and the post will fail. Just re-run `linkedin-agent oauth` and update
 the `LINKEDIN_ACCESS_TOKEN` secret. This is the only recurring maintenance.
 
@@ -152,7 +157,7 @@ the `LINKEDIN_ACCESS_TOKEN` secret. This is the only recurring maintenance.
 ## CLI reference
 
 ```
-linkedin-agent draft                 # daily flow: search + draft + issue + email
+linkedin-agent draft                 # main flow: search + draft + issue + email
 linkedin-agent draft --dry-run       # print to stdout, no side effects
 linkedin-agent publish --issue 42    # publish from a specific issue
 linkedin-agent reject --issue 42     # mark issue rejected, close
@@ -181,6 +186,6 @@ src/linkedin_agent/
 
 worker/                        # Cloudflare Worker (one-click email button)
 .github/workflows/
-├── linkedin-daily-draft.yml   # cron + workflow_dispatch
+├── linkedin-weekly-draft.yml  # cron + workflow_dispatch
 └── linkedin-publish.yml       # repository_dispatch + issue_comment trigger
 ```

@@ -12,7 +12,7 @@ persona: |
 
 # Two or three past LinkedIn posts you wrote that capture the voice you want.
 # The model will use these as few-shot examples for tone/cadence (NOT for
-# content; it will still write about today's news).
+# content; it will still write about current AI trends).
 sample_posts:
   - |
     The market is flooded with AI tools, so I decided to create a comparison

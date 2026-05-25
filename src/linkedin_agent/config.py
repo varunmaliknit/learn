@@ -92,8 +92,11 @@ class AppConfig:
     approval: ApprovalConfig = field(default_factory=ApprovalConfig)
     min_impact_score_to_post: float = 6.0
     # Per-trend quality floor. EVERY one of the 3 trends in a post must score
-    # at least this, otherwise skip the day rather than padding with weak news.
+    # at least this, otherwise skip the run rather than padding with weak trends.
     min_trend_quality_floor: float = 5.0
+    # Lookback window in hours for the search + RSS pass.
+    # 24 = daily cadence, 168 = weekly (default).
+    lookback_hours: int = 168
     extra_rss_feeds: list[str] = field(default_factory=list)
 
 
@@ -163,4 +166,5 @@ def load_config(voice_path: str | Path | None = "voice.yaml") -> AppConfig:
         approval=approval,
         min_impact_score_to_post=float(_env("LINKEDIN_AGENT_MIN_IMPACT", "6.0")),
         min_trend_quality_floor=float(_env("LINKEDIN_AGENT_QUALITY_FLOOR", "5.0")),
+        lookback_hours=int(_env("LINKEDIN_AGENT_LOOKBACK_HOURS", "168")),
     )

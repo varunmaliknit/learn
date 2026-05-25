@@ -1,12 +1,12 @@
 # LinkedIn Approver Worker
 
-A tiny Cloudflare Worker that lets you approve or reject the daily LinkedIn
+A tiny Cloudflare Worker that lets you approve or reject the LinkedIn
 draft with **one click from your email** — no GitHub login required at the
 moment of approval.
 
 ## How it works
 
-1. The daily `linkedin-agent draft` GitHub Action signs two URLs with an HMAC:
+1. The `linkedin-agent draft` GitHub Action signs two URLs with an HMAC:
    - `https://<worker>/a?d=<draft_id>&s=<sig>` — approve
    - `https://<worker>/r?d=<draft_id>&s=<sig>` — reject
 2. Your approval email includes both as big buttons.
@@ -64,7 +64,7 @@ and variables → Actions):
 | `APPROVAL_HMAC_SECRET` | Same value you gave the Worker |
 | `APPROVER_WORKER_URL` | The `https://...workers.dev` URL from `wrangler deploy` |
 
-Now the daily `linkedin-daily-draft.yml` action will email you signed URLs
+Now the `linkedin-weekly-draft.yml` action will email you signed URLs
 that point at this Worker.
 
 ## Local development

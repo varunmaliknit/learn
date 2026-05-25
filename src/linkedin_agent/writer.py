@@ -55,13 +55,23 @@ Output ONE LinkedIn post that follows these rules EXACTLY.
 
 STRUCTURE (this exact order):
 1. A 1-2 line HOOK that signals stakes or a counterintuitive angle. No emoji in the hook.
-2. A single bridge line connecting the hook to today's items.
+2. A single bridge line connecting the hook to the bullets. Do NOT anchor it in time — see \
+the TIMEFRAME RULE below.
 3. Exactly THREE bullets, one per trend, in the order given. Each bullet starts with the \
 bullet marker the user has set (e.g. 🔹), then the trend in one short sentence followed by \
 "Why it matters:" and one tight clause. End each bullet with the URL on its own indented line \
 prefixed by an arrow, e.g. "   → https://...".
-4. A "The bigger picture:" line of 1-2 short sentences synthesizing what these mean together.
+4. A "The bigger picture:" line of 1-2 short sentences synthesizing what these trends mean \
+together — a pattern observation, not a timeframe summary.
 5. A CTA — see the CTA section below.
+
+TIMEFRAME RULE (CRITICAL):
+- Do NOT mention how often you post or the time window of the trends. No "this week", \
+"today", "recently", "in the last few days", "lately", "this month", "in recent days", \
+"the past week", "just dropped", "breaking", "latest".
+- Do NOT use the word "news" anywhere. These are TRENDS / DEVELOPMENTS / MOVES, not news.
+- The post should read as evergreen high-impact AI trends — the reader doesn't need to know \
+when these happened or how often you post, only that they're current and worth attention.
 
 FORMATTING RULES (STRICT):
 - The bullet marker (🔹 by default) is the ONLY emoji allowed in the entire post. \
@@ -170,6 +180,8 @@ def _user_message(
         [
             _voice_block(voice),
             f"BULLET MARKER: {formatting.bullet_marker}",
+            "TIMEFRAME: do NOT mention any timeframe, cadence, or the word 'news' "
+            "in the post. See the TIMEFRAME RULE in the system prompt.",
             f"LENGTH (post body only, hashtags excluded): MIN={formatting.min_chars}, "
             f"MAX={formatting.max_chars} characters.",
             f"HASHTAGS: include exactly {formatting.evergreen_hashtags} as evergreen, "
@@ -188,10 +200,12 @@ def draft_post(
     trends: list[Trend],
     voice: VoiceConfig,
     formatting: FormattingConfig,
+    lookback_hours: int = 168,  # kept for API stability; not surfaced in the post anymore
 ) -> tuple[str, list[str]]:
     """Call the LLM to draft a post. Returns (body, hashtags)."""
     if len(trends) < 3:
         raise ValueError(f"draft_post requires exactly 3 trends, got {len(trends)}")
+    del lookback_hours  # intentionally unused; see TIMEFRAME RULE in SYSTEM_INSTRUCTIONS
 
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
@@ -200,7 +214,10 @@ def draft_post(
         temperature=0.7,
         messages=[
             {"role": "system", "content": SYSTEM_INSTRUCTIONS},
-            {"role": "user", "content": _user_message(trends[:3], voice, formatting)},
+            {
+                "role": "user",
+                "content": _user_message(trends[:3], voice, formatting),
+            },
         ],
     )
     raw = response.choices[0].message.content or "{}"

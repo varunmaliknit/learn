@@ -57,7 +57,8 @@ def _check_token_health(cfg: cfg_module.AppConfig) -> None:
 def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
     """Search, rank, draft, open an issue, send the approval email."""
     draft_id = args.draft_id or _today_id()
-    logger.info("Drafting LinkedIn post for %s", draft_id)
+    window = search._window_phrase(cfg.lookback_hours)
+    logger.info("Drafting LinkedIn post for %s (lookback window: %s)", draft_id, window)
 
     _check_token_health(cfg)
 
@@ -65,6 +66,7 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
         cfg.openai_api_key,
         cfg.openai_model,
         cfg.extra_rss_feeds,
+        lookback_hours=cfg.lookback_hours,
     )
     top = ranker.rank_and_dedupe(
         raw["openai"],
@@ -72,16 +74,18 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
         top_n=cfg.formatting.max_trends,
     )
     if not top:
-        logger.warning("No trends found. Sending 'skipped today' email and exiting.")
-        return _send_skip_email(cfg, draft_id, reason="no trends found in last 24h")
+        logger.warning("No trends found. Sending 'skipped' email and exiting.")
+        return _send_skip_email(cfg, draft_id, reason=f"no trends found in last {window}")
 
     if top[0].impact_score < cfg.min_impact_score_to_post:
         logger.info(
-            "Top trend impact %.1f below threshold %.1f — skipping today.",
+            "Top trend impact %.1f below threshold %.1f — skipping this run.",
             top[0].impact_score,
             cfg.min_impact_score_to_post,
         )
-        return _send_skip_email(cfg, draft_id, reason="no high-impact AI news in last 24h")
+        return _send_skip_email(
+            cfg, draft_id, reason=f"no high-impact AI trends in last {window}"
+        )
 
     if len(top) < 3:
         logger.warning(
@@ -99,18 +103,18 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
             top.append(r)
 
     if len(top) < 3:
-        logger.warning("Could not assemble 3 trends; skipping today.")
+        logger.warning("Could not assemble 3 trends; skipping this run.")
         return _send_skip_email(cfg, draft_id, reason="fewer than 3 viable trends found")
 
     # Quality floor: every trend used in the post must score at least the
     # per-trend threshold. If we can't muster 3 trends that clear the bar,
-    # skip the day rather than padding the post with weak news.
+    # skip the run rather than padding the post with weak trends.
     floor = cfg.min_trend_quality_floor
     strong_enough = [t for t in top[:3] if t.impact_score >= floor]
     if len(strong_enough) < 3:
         scores = ", ".join(f"{t.impact_score:.1f}" for t in top[:3])
         logger.info(
-            "Top 3 trend scores [%s] below per-trend floor %.1f — skipping today.",
+            "Top 3 trend scores [%s] below per-trend floor %.1f — skipping this run.",
             scores,
             floor,
         )
@@ -120,12 +124,17 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
             reason=(
                 f"only {len(strong_enough)}/3 trends cleared the quality floor of "
                 f"{floor:.1f} (scores were: {scores}). "
-                f"Today's AI news isn't strong enough for a post in your voice."
+                f"The last {window} of AI activity isn't strong enough for a post in your voice."
             ),
         )
 
     body, hashtags = writer.draft_post(
-        cfg.openai_api_key, cfg.openai_model, top, cfg.voice, cfg.formatting
+        cfg.openai_api_key,
+        cfg.openai_model,
+        top,
+        cfg.voice,
+        cfg.formatting,
+        lookback_hours=cfg.lookback_hours,
     )
     body, hashtags = formatter.finalize(body, hashtags, cfg.formatting)
 
@@ -353,8 +362,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="linkedin-agent")
     sub = p.add_subparsers(dest="command", required=True)
 
-    draft = sub.add_parser("draft", help="Generate today's draft and email it for approval")
-    draft.add_argument("--draft-id", default=None, help="Override draft id (default: today UTC)")
+    draft = sub.add_parser(
+        "draft",
+        help="Generate a draft (covers cfg.lookback_hours of AI trends) and email it for approval",
+    )
+    draft.add_argument(
+        "--draft-id",
+        default=None,
+        help="Override draft id (default: today UTC, format YYYY-MM-DD)",
+    )
     draft.add_argument("--dry-run", action="store_true", help="Print to stdout; no issue/email")
     draft.set_defaults(func=cmd_draft)
 

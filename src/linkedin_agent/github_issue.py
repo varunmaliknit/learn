@@ -46,7 +46,7 @@ def build_issue_body(draft: Draft, approve_url: str, reject_url: str) -> str:
 - **[Approve & post]({approve_url})** — one click, publishes to LinkedIn
 - **Edit** — change the text above (between the START/END markers), then click
   Approve OR comment `/approve` on this issue
-- **[Reject]({reject_url})** — skip today
+- **[Reject]({reject_url})** — skip this run
 
 You can also approve from inside this issue by commenting `/approve` or `/reject`.
 

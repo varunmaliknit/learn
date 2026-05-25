@@ -8,7 +8,7 @@ from datetime import datetime
 
 @dataclass
 class Trend:
-    """A single AI trend / news item surfaced by web search."""
+    """A single high-impact AI trend surfaced by web search or RSS."""
 
     title: str
     url: str

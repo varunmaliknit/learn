@@ -1,13 +1,14 @@
-name: LinkedIn Daily Draft
+name: LinkedIn Weekly Draft
 
 on:
   schedule:
-    # 07:00 UTC daily. Same window as the stock-agent so both digests land together.
-    - cron: '0 7 * * *'
+    # 14:00 UTC every Monday. Aim for a Monday-morning post in US business hours
+    # (09:00 ET / 06:00 PT). Adjust the cron to taste.
+    - cron: '0 14 * * 1'
   workflow_dispatch:
     inputs:
       draft_id:
-        description: 'Override draft id (default: today UTC)'
+        description: 'Override draft id (default: today UTC, format YYYY-MM-DD)'
         required: false
 
 # The workflow is gated behind the LINKEDIN_AGENT_ENABLED variable so it is
@@ -57,6 +58,8 @@ jobs:
           APPROVER_WORKER_URL: ${{ secrets.APPROVER_WORKER_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LINKEDIN_AGENT_MIN_IMPACT: ${{ vars.LINKEDIN_AGENT_MIN_IMPACT || '6.0' }}
+          LINKEDIN_AGENT_QUALITY_FLOOR: ${{ vars.LINKEDIN_AGENT_QUALITY_FLOOR || '5.0' }}
+          LINKEDIN_AGENT_LOOKBACK_HOURS: ${{ vars.LINKEDIN_AGENT_LOOKBACK_HOURS || '168' }}
         run: |
           if [ -n "${{ github.event.inputs.draft_id }}" ]; then
             linkedin-agent draft --draft-id "${{ github.event.inputs.draft_id }}"

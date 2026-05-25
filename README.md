@@ -1,9 +1,9 @@
 # 📊 Personal Agents
 
-Two daily agents that run as GitHub Actions:
+Two scheduled agents that run as GitHub Actions:
 
 1. **Stock Portfolio Agent** — daily email digest of price moves, news, earnings, and dividends. See below.
-2. **LinkedIn AI-Trends Post Agent** — drafts a daily LinkedIn post on the latest AI trends, emails you a one-click approval, and posts it for you. See [`docs/LINKEDIN_AGENT.md`](docs/LINKEDIN_AGENT.md).
+2. **LinkedIn AI-Trends Post Agent** — drafts a weekly LinkedIn post on the last 7 days of AI trends, emails you a one-click approval, and posts it for you. See [`docs/LINKEDIN_AGENT.md`](docs/LINKEDIN_AGENT.md). (Cadence is configurable — flip to daily via `LINKEDIN_AGENT_LOOKBACK_HOURS=24`.)
 
 ---
 
