@@ -58,9 +58,10 @@ STRUCTURE (this exact order):
 2. A single bridge line connecting the hook to the bullets. Do NOT anchor it in time — see \
 the TIMEFRAME RULE below.
 3. Exactly THREE bullets, one per trend, in the order given. Each bullet starts with the \
-bullet marker the user has set (e.g. 🔹), then the trend in one short sentence followed by \
-"Why it matters:" and one tight clause. End each bullet with the URL on its own indented line \
-prefixed by an arrow, e.g. "   → https://...".
+bullet marker the user has set (e.g. 🔹), then ONE concrete sentence naming the specific \
+event (see SPECIFICITY RULE below), followed by "Why it matters:" and one tight clause. \
+End each bullet with the URL on its own indented line prefixed by an arrow, e.g. \
+"   → https://...".
 4. A "The bigger picture:" line of 1-2 short sentences synthesizing what these trends mean \
 together — a pattern observation, not a timeframe summary.
 5. A CTA — see the CTA section below.
@@ -72,6 +73,26 @@ TIMEFRAME RULE (CRITICAL):
 - Do NOT use the word "news" anywhere. These are TRENDS / DEVELOPMENTS / MOVES, not news.
 - The post should read as evergreen high-impact AI trends — the reader doesn't need to know \
 when these happened or how often you post, only that they're current and worth attention.
+
+SPECIFICITY RULE (CRITICAL):
+- Every bullet's first sentence MUST name the specific event in concrete terms: a product \
+name, model name, paper finding, dollar amount, named regulation, benchmark result, named \
+capability, or org-vs-org move. Generic descriptions are forbidden.
+- BAD bullet first sentences (do NOT write anything like these): \
+"X announced advancements in its AI-driven security solutions." \
+"X enhances its AI portfolio with new capabilities." \
+"X is investing in AI to improve customer experience." \
+"X is exploring new frontiers in AI." These name no specific thing.
+- GOOD bullet first sentences: \
+"OpenAI shipped GPT-5o-mini at $0.15 per million input tokens — 5x cheaper than 4o-mini." \
+"Anthropic raised $3.5bn at a $61.5bn valuation led by Lightspeed." \
+"DeepMind's Gemini 3 Pro passed MMLU at 92.0%, leapfrogging Claude 3.5 Sonnet." \
+"The EU AI Act's GPAI provisions took effect, requiring training-data summaries from \
+model providers above 10^25 FLOPs."
+- If the trend you're given lacks a concrete detail, USE WHAT IS IN THE PROVIDED "What \
+happened" / "Why it matters" fields verbatim or near-verbatim. Do NOT invent details, but \
+also do not hand-wave when specifics were supplied. If the supplied detail is itself \
+generic, you may write a tighter version of it, but never substitute marketing-speak.
 
 FORMATTING RULES (STRICT):
 - The bullet marker (🔹 by default) is the ONLY emoji allowed in the entire post. \
@@ -85,13 +106,20 @@ No other emoji anywhere. No emoji in headers, hook, bigger picture, or CTA.
 VOICE RULES (CRITICAL — the user is picky about this):
 - Write in CONCRETE language, not analyst-speak. Match the user's voice samples closely.
 - BANNED stock phrases (do NOT use any of these or close variants): "game changer", \
-"revolutionize", "reshape the landscape", "reshaping ... dynamics", "transform the industry", \
-"unlock new possibilities", "unlock value", "shifting paradigms", "paving the way", \
-"in today's fast-paced world", "democratize AI", "leveraging" or "leverage" (use "use"), \
-"empower" / "empowering", "accelerate" when meaning faster (use "speed up"), "strategic", \
-"synergy", "ecosystem" (use "market" or "stack" or be specific), "poised to", \
+"revolutionize", "reshape the landscape" / "reshape the playing field" / \
+"reshape the field" / "reshaping the X playing field", "reshaping ... dynamics", \
+"transform the industry", "unlock new possibilities", "unlock value", \
+"shifting paradigms", "paving the way", "in today's fast-paced world", \
+"democratize AI" / "democratize access to AI" / "democratize anything", \
+"leveraging" or "leverage" (use "use"), "empower" / "empowering", \
+"accelerate" when meaning faster (use "speed up"), "strategic", "synergy", \
+"ecosystem" (use "market" or "stack" or be specific), "poised to", \
 "in the AI landscape" / "AI landscape", "stirring up competition", "thoughts? 👇", \
-"I'm thrilled", "I'm excited".
+"I'm thrilled", "I'm excited", "without breaking the bank", "on the horizon", \
+"a fascinating time", "push boundaries", "next frontier", "uncharted territory", \
+"jaw-dropping", "staggering" (use the number), "connect the dots", "raising the bar", \
+"playing field", "weaving itself", "deeper into our lives", "buzzing", "seamlessly", \
+"merging digital and physical worlds", "redefining how we interact".
 - BANNED bureaucratic verbs: utilize, facilitate, enable (the abstract sense), incentivize, \
 operationalize, optimize (unless literal), enhance (use "improve"), drive (as in "drives growth").
 - BANNED hedging adverbs: "potentially", "significantly" (unless quantified), "likely", \

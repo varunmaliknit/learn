@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import feedparser
 from openai import OpenAI
@@ -35,6 +37,109 @@ DEFAULT_RSS_FEEDS = [
     "https://venturebeat.com/category/ai/feed/",
     "https://the-decoder.com/feed/",
 ]
+
+
+# Query string keys that strongly suggest a search / listing / filter page,
+# not a specific article.
+_LISTING_QUERY_KEYS = {
+    "keywords", "search", "q", "query", "tag", "tags",
+    "category", "categories", "topic", "topics", "filter",
+}
+
+# Path segments that indicate a category or tag hub.
+_LISTING_PATH_SEGMENTS = {
+    "category", "categories", "tag", "tags", "topic", "topics",
+}
+
+# Last-path-segment names that are clearly hub / section pages rather than
+# specific articles.
+_LISTING_LAST_SEGMENTS = {
+    "", "ai", "artificial-intelligence", "artificial_intelligence",
+    "machine-learning", "machine_learning", "machinelearning",
+    "news", "blog", "blogs", "research", "articles", "posts",
+    "press-releases", "press-releases-artificial-intelligence",
+    "tech", "technology", "computers_math", "deep-learning", "deep_learning",
+    "generative-ai", "generative_ai", "genai", "llm", "llms",
+}
+
+
+def _is_listing_url(url: str) -> bool:
+    """Heuristic: URL looks like a search / category / listing page, not a
+    specific article. Used to drop trends that have no concrete event to
+    write about (e.g. "newsroom.ibm.com/press-releases-ai?keywords=2026")."""
+    if not url:
+        return True
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+
+    if parsed.query:
+        params = set(parse_qs(parsed.query, keep_blank_values=True).keys())
+        if params & _LISTING_QUERY_KEYS:
+            return True
+
+    path = parsed.path.rstrip("/")
+    segments = [s for s in path.split("/") if s]
+    if not segments:
+        return True  # bare domain
+    if any(s.lower() in _LISTING_PATH_SEGMENTS for s in segments):
+        return True
+    last = segments[-1].lower()
+    if last in _LISTING_LAST_SEGMENTS:
+        return True
+    return False
+
+
+# Slug patterns that strongly indicate an aggregator / recap / roundup article
+# (not a primary report of a specific event). These are URL substrings,
+# matched case-insensitively against the path.
+_AGGREGATOR_SLUG_PATTERN = re.compile(
+    r"(?:^|[/_-])("
+    r"recap|roundup|round-up|wrap-up|wrapup|digest"
+    r"|weekly-top|weekly-best|weekly-recap|weekly-roundup|weekly-digest"
+    r"|monthly-top|monthly-best|monthly-recap|monthly-roundup|monthly-digest"
+    r"|daily-top|daily-best|daily-recap|daily-roundup|daily-digest"
+    r"|top-(?:3|5|7|10|15|20|25)\b"
+    r"|ai-tools-updates|ai-tools-recap|ai-tools-digest|ai-tools-of"
+    r"|ai-by-ai"
+    r"|this-week-in-ai|week-in-ai|today-in-ai|in-ai-today"
+    r"|ai-news"  # any slug containing "ai-news-..." is roundup/aggregator
+    r"|news-recap|news-roundup|news-digest|latest-ai"
+    r")(?:[/_-]|$)",
+    re.IGNORECASE,
+)
+
+# Hosts that exist primarily to recap / aggregate other publishers' AI coverage.
+# Add new hosts here as we encounter them in the wild.
+_AGGREGATOR_HOSTS = {
+    "aitoolsrecap.com",
+    "ai-tools-recap.com",
+    "aitoolsdigest.com",
+    "aiweeklynews.com",
+    "aibynews.com",
+    "ainews.com",
+    "buildfastwithai.com",
+    "aitoolsrecap.io",
+}
+
+
+def _is_aggregator_url(url: str) -> bool:
+    """Heuristic: URL is a recap / roundup / aggregator article rather than a
+    primary report. Such pages mix multiple events under a generic headline,
+    so the writer has no concrete event to anchor the bullet on."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    host = parsed.netloc.lower().removeprefix("www.")
+    if host in _AGGREGATOR_HOSTS:
+        return True
+    if _AGGREGATOR_SLUG_PATTERN.search(parsed.path):
+        return True
+    return False
 
 
 def _window_phrase(lookback_hours: int) -> str:
@@ -88,7 +193,6 @@ def _structure_prompt(now: datetime | None = None, lookback_hours: int = 168) ->
     now = now or datetime.now(timezone.utc)
     window_start = (now - timedelta(hours=lookback_hours)).strftime("%Y-%m-%d")
     today = now.strftime("%Y-%m-%d")
-    window = _window_phrase(lookback_hours)
     return f"""\
 From the previous search results, extract the top high-impact AI items as STRICT JSON.
 
@@ -120,16 +224,44 @@ Rules:
 - STRONGLY prefer primary sources. Primary = the org/lab/paper itself: openai.com, \
 anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, nature.com, \
 sec.gov filings, official company press releases, official policy / regulatory body sites.
-- Aggregators (random recap blogs, content farms, generic AI roundup pages, sites \
-whose URL contains tell-tale patterns like /ai-recap-/, /ai-roundup-/, \
-/ai-news-may-DD-YYYY/, /weekly-ai-/) are NEVER acceptable when a primary source \
-exists for the same event. If the only available source is an aggregator and the \
-event is genuinely from the last {window}, you may include it BUT cap its \
-impact_score at 5.0 to reflect the lower confidence.
+- Aggregators / recap / roundup pages are NEVER acceptable. These include URL slugs \
+containing `recap`, `roundup`, `wrap-up`, `digest`, `weekly-top-N`, `top-5`, \
+`top-10`, `ai-tools-updates-`, `ai-by-ai-`, `week-in-ai`, `this-week-in-ai`, or \
+any month-day-day-year span like `may-18-24-2026`. Domains like aitoolsrecap.com, \
+aiweeklynews.com, ainews.com (etc.) are aggregators by design. DROP these items \
+entirely — do not include them even with a low impact_score. Find the underlying \
+primary source instead, or omit the trend.
 - Reputable trade press (techcrunch.com, theverge.com, bloomberg.com, reuters.com, \
 ft.com, wsj.com, theinformation.com, semianalysis.com) is acceptable as a primary source \
 when the underlying event is a deal / regulatory / market move and no \
-better source exists."""
+better source exists.
+- SPECIFICITY RULE (CRITICAL): every trend must point to a specific event with a \
+named entity — a product, capability, paper title, dollar amount, regulatory action, \
+benchmark result, or org-vs-org move. Vague items get DROPPED, not included.
+  BAD (drop these): "X enhances its Y portfolio", "X announces advancements in Z", \
+"X makes progress on AI safety", "X strengthens its AI capabilities". These have no \
+concrete event — there's nothing for a reader to actually learn about.
+  GOOD (keep these): "OpenAI ships GPT-X with N% improvement on benchmark Y", \
+"Anthropic raises $Nbn at $Xbn valuation led by Z", "DeepMind paper proves \
+attention sinks reduce long-context drift by 40%", "EU AI Act Article 6 enters \
+force, requiring Z for general-purpose models".
+- TITLE/SUMMARY PRESERVATION: when the search result lists several specific named \
+entities (e.g. "Google I/O 2026: Gemini 3.5 Flash, Spark Agent, Android XR Glasses"), \
+the title field MUST keep those specific names. Do NOT abbreviate to "Major AI \
+Announcements" or "Several new releases". The one_line_summary field MUST also name \
+the same specific entities so the writer downstream can reuse them.
+- URL SPECIFICITY: The url MUST point to a specific article / announcement / paper \
+/ filing. Reject URLs that are search results, category pages, tag pages, or \
+listing/index pages (e.g. anything with `?keywords=`, `?search=`, `?tag=`, paths \
+like `/category/`, `/tag/`, or paths ending in a category name like `/ai/`, \
+`/artificial_intelligence/`, `/press-releases/`). If you can only find a listing \
+page for the event, DROP the item.
+- OPINION / PREDICTION FILTER: DROP opinion columns, hot-takes, podcast quotes, \
+interview snippets, and personal predictions about what someone thinks will happen \
+in the future (e.g. "X exec predicts Y will happen by 20XX"). Include only CONCRETE \
+events that actually happened: product launches, models released, papers published, \
+regulations enacted, funding rounds closed, deals signed, key hires announced, \
+benchmark results posted, lawsuits filed."""
 
 
 STRUCTURE_PROMPT = _structure_prompt()  # default for back-compat
@@ -189,10 +321,32 @@ def _structured_trends_from_text(
                 )
                 continue
 
+            cleaned_url = _strip_tracking(str(item["url"]).strip())
+
+            # Drop listing / search / category URLs — they don't point to a
+            # specific event we can write about.
+            if _is_listing_url(cleaned_url):
+                logger.info(
+                    "dropping trend %r: URL %s looks like a listing/search page",
+                    item.get("title"),
+                    cleaned_url,
+                )
+                continue
+
+            # Drop recap / roundup / aggregator articles — they mix multiple
+            # events under a generic headline, so each bullet ends up vague.
+            if _is_aggregator_url(cleaned_url):
+                logger.info(
+                    "dropping trend %r: URL %s looks like a recap/aggregator",
+                    item.get("title"),
+                    cleaned_url,
+                )
+                continue
+
             trends.append(
                 Trend(
                     title=str(item["title"]).strip(),
-                    url=_strip_tracking(str(item["url"]).strip()),
+                    url=cleaned_url,
                     source=str(item.get("source", "")).strip(),
                     one_line_summary=str(item["one_line_summary"]).strip(),
                     why_it_matters=str(item["why_it_matters"]).strip(),
@@ -252,10 +406,14 @@ def fetch_rss_recent(feeds: list[str], hours: int = 168) -> list[Trend]:
                 published_at = datetime(*published_struct[:6], tzinfo=timezone.utc)
                 if published_at < cutoff:
                     continue
+                link = (entry.get("link", "") or "").strip()
+                if _is_listing_url(link) or _is_aggregator_url(link):
+                    # RSS occasionally serves a category page or recap article.
+                    continue
                 items.append(
                     Trend(
                         title=entry.get("title", "").strip(),
-                        url=entry.get("link", "").strip(),
+                        url=link,
                         source=parsed.feed.get("title", "RSS"),
                         one_line_summary=(entry.get("summary", "") or "")[:300].strip(),
                         why_it_matters="",
