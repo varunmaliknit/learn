@@ -76,4 +76,28 @@ def rank_and_dedupe(
         keep.append(r)
 
     keep.sort(key=lambda t: t.impact_score, reverse=True)
+
+    # Diagnostic log: dump every candidate with its source and final score so we
+    # can tell whether the quality-floor gate fires because no candidates exist,
+    # because the LLM scored them low, or because the flat 4.0 base for
+    # RSS-only items kept them under the floor.
+    if keep:
+        logger.info(
+            "ranker pool (%d candidates, top %d returned):", len(keep), top_n
+        )
+        for i, t in enumerate(keep, 1):
+            marker = "*" if i <= top_n else " "
+            title = t.title if len(t.title) <= 80 else t.title[:77] + "..."
+            logger.info(
+                "  %s %2d. score=%4.1f  source=%-12s  %s  (%s)",
+                marker,
+                i,
+                t.impact_score,
+                t.source[:12],
+                title,
+                t.short_source(),
+            )
+    else:
+        logger.info("ranker pool is empty after dedup")
+
     return keep[:top_n]
