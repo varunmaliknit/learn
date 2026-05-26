@@ -88,6 +88,12 @@ def _is_listing_url(url: str) -> bool:
     last = segments[-1].lower()
     if last in _LISTING_LAST_SEGMENTS:
         return True
+    # Bare date-archive paths like /2026/, /2026/05/, /2026/05/26/ — every
+    # segment is numeric, so there is no article slug. Real articles look
+    # like /2026/05/26/openai-files-for-ipo/ where the last segment is the
+    # slug, not a number.
+    if all(s.isdigit() for s in segments):
+        return True
     return False
 
 
@@ -106,6 +112,8 @@ _AGGREGATOR_SLUG_PATTERN = re.compile(
     r"|this-week-in-ai|week-in-ai|today-in-ai|in-ai-today"
     r"|ai-news"  # any slug containing "ai-news-..." is roundup/aggregator
     r"|news-recap|news-roundup|news-digest|latest-ai"
+    r"|briefing|morning-briefing|evening-briefing"
+    r"|daily-briefing|weekly-briefing|nightly-briefing"
     r")(?:[/_-]|$)",
     re.IGNORECASE,
 )
@@ -121,6 +129,7 @@ _AGGREGATOR_HOSTS = {
     "ainews.com",
     "buildfastwithai.com",
     "aitoolsrecap.io",
+    "toolbrain.net",
 }
 
 
