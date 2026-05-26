@@ -106,10 +106,19 @@ def _env(name: str, default: str = "") -> str:
 
 
 def load_config(voice_path: str | Path | None = "voice.yaml") -> AppConfig:
-    """Load configuration from environment + optional voice.yaml file."""
+    """Load configuration from environment + optional voice.yaml file.
+
+    If the requested voice file does not exist, falls back to
+    ``voice.yaml.example`` in the current working directory so the agent
+    always has at least the committed persona/samples to work with.
+    """
     voice = VoiceConfig()
     if voice_path is not None:
         p = Path(voice_path)
+        if not p.exists():
+            fallback = Path("voice.yaml.example")
+            if fallback.exists():
+                p = fallback
         if p.exists():
             with open(p) as f:
                 raw = yaml.safe_load(f) or {}
