@@ -42,6 +42,13 @@ from linkedin_agent.search import (
         "https://example.com",
         "https://example.com/",
         "",
+        # Bare date-archive paths (no article slug). Real TC link from
+        # production run 26476805725 that slipped through before this fix.
+        "https://techcrunch.com/2026/05/",
+        "https://techcrunch.com/2026/",
+        "https://techcrunch.com/2026/05/26/",
+        "https://example.com/2024/12/",
+        "https://example.com/2024/12/31/",
     ],
 )
 def test_is_listing_url_positives(url: str) -> None:
@@ -91,6 +98,15 @@ def test_is_listing_url_negatives(url: str) -> None:
         "https://example.com/foo/ai-tools-updates-may-2026",
         "https://example.com/2026/05/may-recap-ai-news",
         "https://example.com/blog/monthly-digest-ai",
+        # Briefing-style newsletter slugs (Real toolbrain link from
+        # production run 26476805725 that slipped through before this fix.)
+        "https://toolbrain.net/ai-morning-briefing-may-19-2026/",
+        "https://example.com/2026/05/morning-briefing-ai-may-19/",
+        "https://example.com/daily-briefing-2026-05-19/",
+        "https://example.com/evening-briefing-may-20/",
+        "https://example.com/foo/weekly-briefing-2026/",
+        # toolbrain.net is also flagged as an aggregator host
+        "https://toolbrain.net/any-article-here/",
     ],
 )
 def test_is_aggregator_url_positives(url: str) -> None:
