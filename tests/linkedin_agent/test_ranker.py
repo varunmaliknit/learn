@@ -67,9 +67,21 @@ def test_rss_only_item_added_with_floor_score() -> None:
     rss_only = _t("Unrelated event", "https://other.com/y", 0.0)
     out = rank_and_dedupe([a], [rss_only], top_n=3)
     assert len(out) == 2
-    # RSS-only items get a 4.0 floor
+    # Unscored RSS items (impact_score==0) get a 4.0 baseline as a safety net.
     rss_in_out = next(t for t in out if t.url == "https://other.com/y")
-    assert rss_in_out.impact_score >= 4.0
+    assert rss_in_out.impact_score == 4.0
+
+
+def test_rss_item_preserves_existing_llm_score() -> None:
+    """RSS items that arrive with a non-zero score (LLM-scored by
+    score_rss_items upstream) must NOT get bumped to the 4.0 baseline."""
+    a = _t("Big news", "https://openai.com/x", 9.0)
+    rss_low = _t("Low signal", "https://other.com/y", 2.0)
+    rss_high = _t("High signal", "https://third.com/z", 7.5)
+    out = rank_and_dedupe([a], [rss_low, rss_high], top_n=3)
+    by_url = {t.url: t for t in out}
+    assert by_url["https://other.com/y"].impact_score == 2.0
+    assert by_url["https://third.com/z"].impact_score == 7.5
 
 
 def test_top_n_caps_results() -> None:
