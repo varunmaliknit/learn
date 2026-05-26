@@ -301,14 +301,7 @@ def _structured_trends_from_text(
     for item in data.get("trends", []):
         try:
             published_raw = str(item.get("published_at", "")).strip()
-            published_at: datetime | None = None
-            if published_raw:
-                try:
-                    published_at = datetime.strptime(published_raw, "%Y-%m-%d").replace(
-                        tzinfo=timezone.utc
-                    )
-                except ValueError:
-                    published_at = None
+            published_at: datetime | None = _parse_published_at(published_raw)
 
             # Hard recency gate: if we have a publication date and it's older
             # than (lookback_hours + 12h grace), drop the item.
@@ -360,6 +353,41 @@ def _structured_trends_from_text(
     return trends
 
 
+_BARE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_published_at(raw: str) -> datetime | None:
+    """Parse the LLM-supplied published_at into a tz-aware datetime.
+
+    The LLM may return either a full ISO timestamp ("2026-05-19T14:30:00Z")
+    or a bare date ("2026-05-19"). Bare dates are interpreted as the END of
+    that day in UTC, so they don't get spuriously dropped by the recency
+    cutoff just because the day overlaps the window boundary. (Treating a
+    bare date as midnight would put any boundary-day item ~12h before the
+    grace cutoff, which has caused real-world drops in production.)
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    # Bare date first: treat as end-of-day UTC. Done before fromisoformat
+    # because that helper also accepts bare dates but defaults to midnight.
+    if _BARE_DATE_RE.match(raw):
+        try:
+            dt = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            return None
+        return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+    # Full ISO datetime (handle trailing 'Z')
+    iso = raw.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _openai_web_search(client: OpenAI, model: str, lookback_hours: int = 168) -> str:
     """Call the Responses API with the web_search_preview tool, return text output."""
     response = client.responses.create(
@@ -386,6 +414,100 @@ def fetch_openai_trends(
     if not search_text.strip():
         return []
     return _structured_trends_from_text(client, model, search_text, lookback_hours=lookback_hours)
+
+
+_RSS_SCORE_PROMPT = """\
+Score each of the following AI/tech items on a 0-10 IMPACT scale, calibrated for
+a senior technical audience that already follows the field. Most stories are 3-5;
+real signal earns 6+; only paradigm shifts earn 8+.
+
+Calibration anchors:
+  10 - paradigm-shifting frontier release (e.g. "GPT-5 launches", major new law)
+   8 - strong industry signal (named product launch, $1B+ deal, notable benchmark)
+   6 - solid technical content (specific research result, named product capability)
+   4 - incremental vendor update / industry chatter / partnership PR
+   2 - trivial (event tickets, layoffs at non-frontier shops, opinion pieces)
+   0 - filler / off-topic / clickbait / no concrete event
+
+For each item also produce a one-sentence "why_it_matters" explaining the
+concrete consequence for AI practitioners.
+
+Return STRICT JSON: {"items": [{"i": 0, "impact_score": 7.0, "why_it_matters": "..."}, ...]}
+Include EVERY input item. Use the same integer "i" you were given.
+"""
+
+
+def score_rss_items(client: OpenAI, model: str, items: list[Trend]) -> list[Trend]:
+    """Score RSS-sourced items on the same 0-10 scale as OpenAI web-search items.
+
+    Without this pass, RSS items have impact_score=0 and end up pinned at the
+    ranker's flat 4.0 base, so an RSS-rich week can never clear the 5.0 quality
+    floor. A single batched LLM call assigns each item a real score and a
+    "why_it_matters" sentence.
+
+    Items beyond the first ``max_to_score`` (sorted by recency desc) are left
+    unscored so we keep the call cheap and focused.
+    """
+    if not items:
+        return items
+
+    # Score the most recent N items only; older items are unlikely to win on score.
+    max_to_score = 30
+    ordered = sorted(
+        items,
+        key=lambda t: t.published_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    head, tail = ordered[:max_to_score], ordered[max_to_score:]
+
+    payload = [
+        {
+            "i": idx,
+            "title": t.title,
+            "source": t.source,
+            "summary": (t.one_line_summary or "")[:280],
+        }
+        for idx, t in enumerate(head)
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": _RSS_SCORE_PROMPT},
+                {"role": "user", "content": json.dumps(payload)},
+            ],
+            temperature=0.1,
+        )
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+    except (json.JSONDecodeError, Exception) as e:  # noqa: BLE001
+        logger.warning("RSS scoring pass failed (%s); leaving items unscored", e)
+        return items
+
+    by_index: dict[int, dict[str, Any]] = {}
+    for it in data.get("items", []):
+        try:
+            by_index[int(it["i"])] = it
+        except (KeyError, ValueError, TypeError):
+            continue
+
+    for idx, t in enumerate(head):
+        scored = by_index.get(idx)
+        if not scored:
+            continue
+        try:
+            score = float(scored.get("impact_score", 0.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        # Clamp to [0, 10]
+        t.impact_score = max(0.0, min(10.0, score))
+        wim = str(scored.get("why_it_matters", "") or "").strip()
+        if wim:
+            t.why_it_matters = wim
+
+    return head + tail
 
 
 def fetch_rss_recent(feeds: list[str], hours: int = 168) -> list[Trend]:
@@ -455,6 +577,20 @@ def gather_trends(
         logger.info("RSS gathered %d items in last %s", len(rss_trends), window)
     except Exception as e:  # noqa: BLE001
         logger.error("RSS gather failed: %s", e)
+
+    if rss_trends and openai_api_key:
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            rss_trends = score_rss_items(client, model, rss_trends)
+            logger.info(
+                "RSS scoring pass complete: top scores %s",
+                sorted(
+                    (round(t.impact_score, 1) for t in rss_trends),
+                    reverse=True,
+                )[:5],
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("RSS scoring pass failed (continuing unscored): %s", e)
 
     return {"openai": openai_trends, "rss": rss_trends}
 

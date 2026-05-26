@@ -71,8 +71,13 @@ def rank_and_dedupe(
         if dup_idx is not None:
             keep[dup_idx].impact_score += cross_source_boost
             continue
-        # Fresh RSS-only item: low base impact (we have no LLM judgment).
-        r.impact_score = max(r.impact_score, 4.0)
+        # Fresh RSS-only item. Preserve any LLM score already assigned upstream
+        # (search.score_rss_items); only apply the legacy 4.0 baseline when the
+        # item arrived completely unscored (impact_score==0), so we don't
+        # silently inflate low-but-legitimate LLM scores (e.g. a 2.0 filler
+        # item should stay at 2.0, not get bumped to 4.0).
+        if r.impact_score <= 0:
+            r.impact_score = 4.0
         keep.append(r)
 
     keep.sort(key=lambda t: t.impact_score, reverse=True)
