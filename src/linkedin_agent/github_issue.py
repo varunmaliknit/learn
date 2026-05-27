@@ -26,18 +26,21 @@ HASHTAGS_END = "<!-- linkedin-hashtags END -->"
 
 def build_issue_body(draft: Draft, approve_url: str, reject_url: str) -> str:
     """Build the markdown body for the approval issue."""
-    tag_line = " ".join(f"#{h}" for h in draft.hashtags)
     sources = "\n".join(
         f"- [{t.title}]({t.url}) — impact {t.impact_score:.1f} ({t.short_source()})"
         for t in draft.trends
     )
+    # Hashtags section is only rendered when the draft actually has tags;
+    # the writer no longer generates them by default. The markers stay
+    # available as a stable API for user-edits that want to add tags back.
+    if draft.hashtags:
+        tag_line = " ".join(f"#{h}" for h in draft.hashtags)
+        hashtags_block = f"\n\n{HASHTAGS_START}\n{tag_line}\n{HASHTAGS_END}"
+    else:
+        hashtags_block = ""
     return f"""{POST_START}
 {draft.body.strip()}
-{POST_END}
-
-{HASHTAGS_START}
-{tag_line}
-{HASHTAGS_END}
+{POST_END}{hashtags_block}
 
 ---
 

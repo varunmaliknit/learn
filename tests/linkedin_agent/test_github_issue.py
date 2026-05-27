@@ -38,10 +38,23 @@ def test_build_issue_body_contains_markers() -> None:
     draft = _sample_draft()
     body = build_issue_body(draft, "https://approve.example", "https://reject.example")
     assert POST_START in body and POST_END in body
+    # Hashtag markers only render when the draft actually has hashtags.
     assert HASHTAGS_START in body and HASHTAGS_END in body
     assert "https://approve.example" in body
     assert "https://reject.example" in body
     assert "🔹 What to do" in body  # bullet marker in instructions section
+
+
+def test_build_issue_body_omits_hashtag_block_when_empty() -> None:
+    """Default writer no longer generates hashtags; verify the issue body
+    does not render an empty <!-- linkedin-hashtags --> block in that
+    case (clean issue, no dangling markers)."""
+    draft = _sample_draft()
+    draft.hashtags = []
+    body = build_issue_body(draft, "https://approve.example", "https://reject.example")
+    assert POST_START in body and POST_END in body
+    assert HASHTAGS_START not in body
+    assert HASHTAGS_END not in body
 
 
 def test_extract_post_from_body_round_trip() -> None:

@@ -138,18 +138,6 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
     )
     body, hashtags = formatter.finalize(body, hashtags, cfg.formatting)
 
-    found_urls = formatter.count_required_urls(body, [t.url for t in top[:3]])
-    if found_urls < 3:
-        logger.warning(
-            "Draft only contains %d/3 source URLs — appending missing ones at the bottom",
-            found_urls,
-        )
-        existing = body.rstrip()
-        for t in top[:3]:
-            if t.url not in body:
-                existing += f"\n   → {t.url}"
-        body = existing
-
     draft = Draft(
         draft_id=draft_id,
         body=body,
