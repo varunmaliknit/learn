@@ -54,12 +54,60 @@ def test_dedupes_fuzzy_titles() -> None:
 
 def test_cross_source_boost_when_rss_confirms() -> None:
     # Titles need ≥0.6 Jaccard overlap to be detected as the same story.
-    a = _t("Anthropic releases Claude 4", "https://openai.com/x", 7.0)
-    rss = _t("Anthropic releases Claude 4", "https://other-coverage.com/x", 4.0)
+    # Use neutral hosts (not Tier-1, not consumer-blog) so this test exercises
+    # ONLY the cross-source boost, not the publisher-tier adjustment.
+    a = _t("Anthropic releases Claude 4", "https://neutral-a.example/x", 7.0)
+    rss = _t("Anthropic releases Claude 4", "https://neutral-b.example/x", 4.0)
     out = rank_and_dedupe([a], [rss], top_n=3, cross_source_boost=1.5)
     assert len(out) == 1
     # Boost added
     assert out[0].impact_score == 8.5
+
+
+def test_tier1_host_gets_score_boost() -> None:
+    """Items from premium business / analyst press get +0.5 added after
+    LLM scoring so they edge out same-score Tier-2 / consumer items."""
+    a = _t("AI funding round", "https://www.bloomberg.com/news/articles/foo", 7.0)
+    b = _t("Different story", "https://neutral.example/x", 7.0)
+    out = rank_and_dedupe([a, b], [], top_n=3)
+    bloomberg = next(t for t in out if "bloomberg" in t.url)
+    neutral = next(t for t in out if "neutral.example" in t.url)
+    assert bloomberg.impact_score == 7.5
+    assert neutral.impact_score == 7.0
+    # Bloomberg should win the top-1 slot.
+    assert out[0].url.endswith("/foo")
+
+
+def test_consumer_blog_host_gets_score_penalty() -> None:
+    """Items from consumer-tech / SEO-bait blogs get a 1.0 penalty so they
+    fall behind same-score Tier-1 / neutral items in the top-3 pick."""
+    a = _t("AI thing", "https://www.tomsguide.com/news/ai-thing", 7.0)
+    b = _t("Different story", "https://neutral.example/x", 6.5)
+    out = rank_and_dedupe([a, b], [], top_n=3)
+    toms = next(t for t in out if "tomsguide" in t.url)
+    neutral = next(t for t in out if "neutral.example" in t.url)
+    assert toms.impact_score == 6.0  # 7.0 - 1.0
+    assert neutral.impact_score == 6.5
+    # The neutral item wins despite starting at a lower LLM score.
+    assert "neutral.example" in out[0].url
+
+
+def test_tier1_boost_handles_subdomains() -> None:
+    """Subdomains of Tier-1 hosts (e.g. feeds.bloomberg.com) also get
+    the boost — the matcher is suffix-aware."""
+    a = _t("A", "https://feeds.bloomberg.com/technology/news/foo", 6.0)
+    b = _t("B", "https://neutral.example/y", 6.0)
+    out = rank_and_dedupe([a, b], [], top_n=3)
+    bloomberg = next(t for t in out if "bloomberg" in t.url)
+    assert bloomberg.impact_score == 6.5
+
+
+def test_consumer_penalty_does_not_drive_score_below_zero() -> None:
+    """If a consumer-blog item has a very low LLM score, the 1.0 penalty
+    should not push impact_score negative (downstream rounding / display)."""
+    a = _t("Filler", "https://www.tomsguide.com/news/foo", 0.5)
+    out = rank_and_dedupe([a], [], top_n=3)
+    assert out[0].impact_score == 0.0
 
 
 def test_rss_only_item_added_with_floor_score() -> None:

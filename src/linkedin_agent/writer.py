@@ -65,6 +65,50 @@ Do NOT add URLs to the bullets. Do NOT add a source line.
 
 No separate "bridge" line and no "The bigger picture:" paragraph — keep the post tight.
 
+TREND-FRAMING RULE (CRITICAL — read carefully):
+The input items are recent events, but the post must read as TREND ANALYSIS, not news \
+reporting. Every bullet must treat the named event as EVIDENCE of a broader pattern \
+or shift that's been building. The reader should walk away with a thesis about where \
+the market / capability / regulation is HEADING — not a list of things that happened.
+- Each bullet's first sentence still names the specific event with concrete numbers \
+(SPECIFICITY RULE still applies — do not regress on that), but it should be phrased \
+or framed in a way that connects the event to the larger movement it's part of.
+- The "Why it matters:" clause must explain the PATTERN the event signals, not just the \
+direct consequence of the event itself.
+- Mental model: "this event is the latest data point in [pattern X]". Not: "this \
+event happened, here's what it means in isolation".
+- Frame as a SIGNAL of: a price/cost trajectory, a capability frontier moving, a \
+business-model shift, a regulatory direction, a consolidation/fragmentation move, a \
+category commoditizing, a buyer's market emerging, talent/capital reallocation, etc.
+
+FRAMING EXAMPLES (study the difference — same underlying event, different framing):
+
+BAD framing (news-style, single event):
+"🔹 Cognition (the Devin maker) raised at a $26B valuation — more than 2x its mark from \
+nine months ago. Why it matters: investors believe coding agents will reshape software \
+development."
+
+GOOD framing (trend-signal, same event):
+"🔹 Coding-agent valuations are detaching from feature multiples — Cognition just doubled \
+to $26B in nine months, Cursor closed $9B Series C, and OpenAI is shipping a sub-$0.10 \
+Codex tier. Why it matters: a coding-agent line item is becoming a separate budget \
+category inside dev-tools budgets, not an IDE add-on."
+
+BAD framing (news-style):
+"🔹 Google released Gemini 3.5 Flash with 4x faster token output at Google I/O 2026. \
+Why it matters: Google now has a faster model."
+
+GOOD framing (trend-signal):
+"🔹 Inference latency, not benchmark scores, is the new frontier model fight — Google's \
+Gemini 3.5 Flash hit 4x faster output at I/O 2026, days after Anthropic shipped Sonnet \
+4.5 with sub-200ms first-token. Why it matters: if you're building agent loops where \
+each call is one of 50 sequential steps, your model choice now hinges on latency \
+budgets, not capability ceilings."
+
+Note in the GOOD versions: the named event is still concrete (still names Cognition / \
+$26B / Gemini 3.5 Flash / 4x), but it's positioned as the latest data point in a \
+pattern the reader can name and reason about.
+
 TIMEFRAME RULE (CRITICAL):
 - Do NOT mention how often you post or the time window of the trends. No "this week", \
 "today", "recently", "in the last few days", "lately", "this month", "in recent days", \
@@ -133,7 +177,11 @@ plain words.
 "WHY IT MATTERS" EXAMPLES — study these patterns carefully:
 
 BAD: "Why it matters: this reshapes AI hardware dynamics."
-GOOD: "Why it matters: teams buying H100s now have a second supplier to play against on price."
+GOOD (single-event consequence): "Why it matters: teams buying H100s now have a second \
+supplier to play against on price."
+BETTER (trend-signal — what we want): "Why it matters: the hyperscaler-as-buyer monopsony \
+for frontier accelerators is cracking — for the first time AI infra teams have credible \
+leverage on price-per-FLOP at the procurement table."
 
 BAD: "Why it matters: this highlights AI's expanding role in enterprise environments."
 GOOD: "Why it matters: if you're picking a coding agent for your team this quarter, Codex \

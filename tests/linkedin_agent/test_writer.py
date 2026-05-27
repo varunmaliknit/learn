@@ -82,3 +82,28 @@ def test_system_instructions_drop_old_url_arrow_format() -> None:
     lower = SYSTEM_INSTRUCTIONS.lower()
     assert "end each bullet with the url" not in lower
     assert "all three source urls must appear" not in lower
+
+
+def test_system_instructions_includes_trend_framing_rule() -> None:
+    """The writer prompt must instruct the LLM to frame each bullet as a
+    SIGNAL of a broader pattern, not as a single news event in isolation.
+    Without this, the post reads as 'three news items' rather than
+    trend analysis."""
+    lower = SYSTEM_INSTRUCTIONS.lower()
+    assert "trend-framing rule" in lower
+    # Key concepts we want the prompt to convey to the model.
+    assert "trend analysis" in lower
+    assert "not news reporting" in lower
+    assert "signal of" in lower or "signal of:" in lower
+    assert "broader pattern" in lower
+
+
+def test_system_instructions_contains_news_vs_trend_examples() -> None:
+    """The prompt should contain at least one BAD/GOOD framing example
+    pair so the LLM has a concrete model to imitate."""
+    # Both bad and good framing examples should be present.
+    text = SYSTEM_INSTRUCTIONS
+    assert "BAD framing" in text
+    assert "GOOD framing" in text
+    # Concrete example marker from the framing section.
+    assert "Coding-agent valuations" in text or "latency budgets" in text

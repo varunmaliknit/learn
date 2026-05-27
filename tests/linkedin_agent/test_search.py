@@ -10,9 +10,13 @@ import pytest
 
 from linkedin_agent.models import Trend
 from linkedin_agent.search import (
+    CONSUMER_TECH_BLOG_HOSTS,
+    DEFAULT_RSS_FEEDS,
+    TIER1_HOSTS,
     _is_aggregator_url,
     _is_listing_url,
     _parse_published_at,
+    _web_search_prompt,
     score_rss_items,
 )
 
@@ -298,3 +302,94 @@ def test_score_rss_items_orders_by_recency_before_scoring() -> None:
     # New should get the high score because it's first after recency sort
     assert by_title["New"].impact_score == 9.0
     assert by_title["Old"].impact_score == 1.0
+
+
+def test_default_rss_feeds_includes_premium_business_press() -> None:
+    """The feed list must include premium business press (Bloomberg, FT,
+    WSJ, NYT, Economist, Wired). Without these, the RSS pool stays
+    tech-blog heavy and the writer cites Tom's Guide / TechCrunch instead
+    of reputable sources."""
+    joined = " ".join(DEFAULT_RSS_FEEDS).lower()
+    assert "bloomberg.com" in joined
+    assert "ft.com" in joined
+    assert "wsj.com" in joined or "a.dj.com" in joined
+    assert "economist.com" in joined
+    assert "nytimes.com" in joined
+    assert "wired.com" in joined
+
+
+def test_default_rss_feeds_includes_premium_ai_analysts() -> None:
+    """The feed list must include premium AI-specialist analysts
+    (SemiAnalysis, Stratechery, Import AI, Latent Space, Platformer,
+    Gary Marcus). These provide trend-pattern analysis rather than
+    single-event news."""
+    joined = " ".join(DEFAULT_RSS_FEEDS).lower()
+    assert "semianalysis.com" in joined
+    assert "stratechery.com" in joined
+    assert "importai.substack.com" in joined
+    assert "latent.space" in joined
+    assert "platformer.news" in joined
+    assert "garymarcus.substack.com" in joined
+
+
+def test_tier1_and_consumer_blog_host_sets_are_disjoint() -> None:
+    """A host cannot be BOTH a premium Tier-1 source AND a banned
+    consumer-tech blog. If this fails, the ranker's tier-adjustment
+    logic becomes ambiguous (whichever frozenset hits first wins)."""
+    overlap = TIER1_HOSTS & CONSUMER_TECH_BLOG_HOSTS
+    assert overlap == set(), f"Hosts in both sets: {overlap}"
+
+
+def test_tier1_hosts_includes_expected_premium_sources() -> None:
+    """Spot-check that the Tier-1 frozenset names the publications the
+    user asked for (Bloomberg, FT, WSJ, SemiAnalysis, etc.). If someone
+    accidentally drops one, this test catches it."""
+    expected = {
+        "bloomberg.com",
+        "ft.com",
+        "wsj.com",
+        "reuters.com",
+        "economist.com",
+        "nytimes.com",
+        "semianalysis.com",
+        "stratechery.com",
+        "openai.com",
+        "anthropic.com",
+        "deepmind.google",
+    }
+    missing = expected - TIER1_HOSTS
+    assert missing == set(), f"Missing Tier-1 hosts: {missing}"
+
+
+def test_consumer_tech_blog_hosts_includes_expected_blocked_sources() -> None:
+    """Spot-check that the consumer-blog frozenset names the publications
+    the user wants the agent to AVOID citing (Tom's Guide, Android
+    Central, etc.)."""
+    expected = {
+        "tomsguide.com",
+        "androidcentral.com",
+        "androidpolice.com",
+        "9to5google.com",
+        "9to5mac.com",
+    }
+    missing = expected - CONSUMER_TECH_BLOG_HOSTS
+    assert missing == set(), f"Missing consumer-blog hosts: {missing}"
+
+
+def test_web_search_prompt_names_premium_sources_and_bans_consumer_blogs() -> None:
+    """The OpenAI web-search prompt must explicitly tell the model to
+    prefer Bloomberg / FT / WSJ / SemiAnalysis and to NEVER cite
+    tomsguide / androidcentral / 9to5google. Without these phrases in
+    the prompt, the LLM falls back to whatever Google ranks highest for
+    the keyword (usually consumer blogs)."""
+    prompt = _web_search_prompt(lookback_hours=168)
+    lower = prompt.lower()
+    # Premium sources should be named as preferred.
+    assert "bloomberg.com" in lower
+    assert "ft.com" in lower
+    assert "wsj.com" in lower
+    assert "semianalysis.com" in lower
+    # Consumer-tech blogs should be named as banned.
+    assert "tomsguide.com" in lower
+    assert "androidcentral.com" in lower
+    assert "9to5google.com" in lower
