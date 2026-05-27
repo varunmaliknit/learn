@@ -49,12 +49,18 @@ class VoiceConfig:
 @dataclass
 class FormattingConfig:
     bullet_marker: str = "🔹"  # bullets-as-emoji only
-    max_chars: int = 1800
-    min_chars: int = 900
+    # Tight 600–900 char target keeps the post scannable on LinkedIn (no
+    # "see more" truncation) while still leaving room for an intro + 3
+    # bullets + 1 closing question.
+    max_chars: int = 900
+    min_chars: int = 600
     max_trends: int = 3
-    hashtags_min: int = 4
-    hashtags_max: int = 6
-    evergreen_hashtags: list[str] = field(default_factory=lambda: ["AI", "MachineLearning"])
+    # Hashtags disabled by default. The writer no longer generates them
+    # and the formatter renders the post body alone. Set hashtags_max > 0
+    # plus evergreen_hashtags to re-enable.
+    hashtags_min: int = 0
+    hashtags_max: int = 0
+    evergreen_hashtags: list[str] = field(default_factory=list)
 
 
 @dataclass

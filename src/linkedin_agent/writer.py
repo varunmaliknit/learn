@@ -2,7 +2,7 @@
 
 Drafts a post that matches the user's voice samples and adheres to the
 formatting policy (bullets-as-emoji only, no other emoji; tight length;
-3 bullets; hashtags at the end).
+3 bullets; no URLs in the body; no hashtags).
 """
 
 from __future__ import annotations
@@ -37,11 +37,12 @@ def _voice_block(voice: VoiceConfig) -> str:
 
 
 def _trends_block(trends: list[Trend]) -> str:
-    out = ["TRENDS TO COVER (in order, you may rephrase but keep all 3 URLs):"]
+    out = [
+        "TRENDS TO COVER (in this order, one bullet each, you may rephrase):",
+    ]
     for i, t in enumerate(trends, 1):
         out.append(
             f"{i}. {t.title}\n"
-            f"   URL: {t.url}\n"
             f"   Source: {t.source}\n"
             f"   What happened: {t.one_line_summary}\n"
             f"   Why it matters: {t.why_it_matters}"
@@ -54,17 +55,15 @@ You are a LinkedIn ghostwriter for an experienced AI practitioner. \
 Output ONE LinkedIn post that follows these rules EXACTLY.
 
 STRUCTURE (this exact order):
-1. A 1-2 line HOOK that signals stakes or a counterintuitive angle. No emoji in the hook.
-2. A single bridge line connecting the hook to the bullets. Do NOT anchor it in time — see \
-the TIMEFRAME RULE below.
-3. Exactly THREE bullets, one per trend, in the order given. Each bullet starts with the \
+1. A 1-line HOOK that signals stakes or a counterintuitive angle. No emoji in the hook. \
+Keep it short — the post is tight overall.
+2. Exactly THREE bullets, one per trend, in the order given. Each bullet starts with the \
 bullet marker the user has set (e.g. 🔹), then ONE concrete sentence naming the specific \
 event (see SPECIFICITY RULE below), followed by "Why it matters:" and one tight clause. \
-End each bullet with the URL on its own indented line prefixed by an arrow, e.g. \
-"   → https://...".
-4. A "The bigger picture:" line of 1-2 short sentences synthesizing what these trends mean \
-together — a pattern observation, not a timeframe summary.
-5. A CTA — see the CTA section below.
+Do NOT add URLs to the bullets. Do NOT add a source line.
+3. A CTA — ONE specific question grounded in the trends (see CTA section below).
+
+No separate "bridge" line and no "The bigger picture:" paragraph — keep the post tight.
 
 TIMEFRAME RULE (CRITICAL):
 - Do NOT mention how often you post or the time window of the trends. No "this week", \
@@ -96,12 +95,13 @@ generic, you may write a tighter version of it, but never substitute marketing-s
 
 FORMATTING RULES (STRICT):
 - The bullet marker (🔹 by default) is the ONLY emoji allowed in the entire post. \
-No other emoji anywhere. No emoji in headers, hook, bigger picture, or CTA.
-- Do NOT include hashtags. They will be appended separately.
+No other emoji anywhere. No emoji in the hook or the CTA.
+- Do NOT include URLs of any kind in the post body. No "→ https://..." lines, no \
+bare links, no markdown link syntax. The post stands on its own; sources live elsewhere.
+- Do NOT include hashtags. The post is the entire post — no trailing tag line.
 - Use plain prose. No bold, no italics, no markdown headings — LinkedIn renders none of that.
-- Use straight arrows " → " for URLs. Don't use markdown link syntax; LinkedIn shows the bare URL.
-- All three source URLs must appear, each on its own line under its bullet.
-- Body length target: between MIN and MAX characters (post text only, hashtags excluded).
+- Body length target: between MIN and MAX characters (TOTAL post length). Aim for the \
+middle of that range; do not pad to hit MAX.
 
 VOICE RULES (CRITICAL — the user is picky about this):
 - Write in CONCRETE language, not analyst-speak. Match the user's voice samples closely.
@@ -173,9 +173,10 @@ should consider?"
 - Keep the CTA to ONE question, max two sentences. Do not stack multiple questions.
 
 CONSTRAINTS:
-- You MUST use all THREE provided trends and all THREE provided URLs (one per bullet).
+- You MUST use all THREE provided trends, one per bullet, in the order given.
 - Do NOT invent facts beyond what's in the trend summaries.
 - Do NOT claim opinions/positions the user hasn't expressed; stay neutral-curious.
+- Do NOT include URLs anywhere in the body. Do NOT include hashtags.
 
 SELF-CHECK BEFORE RETURNING JSON:
 After drafting the post, scan your "body" text. If it contains ANY of these words/phrases, \
@@ -190,13 +191,10 @@ examples above). It is better to say nothing than to hedge.
 
 OUTPUT FORMAT (STRICT JSON, no surrounding prose):
 {
-  "body": "the full post text following the structure above",
-  "hashtags": ["AI", "MachineLearning", "...up to 6 total..."]
+  "body": "the full post text following the structure above"
 }
 
-For hashtags: 4-6 total, no leading '#'. Always include the evergreen tags provided. \
-Add 2-3 specific tags relevant to the trends (e.g. LLM, AIAgents, OpenSourceAI, AIRegulation, \
-AISafety, Robotics, ComputerVision). Camel-case multi-word tags (no spaces, no underscores)."""
+Do NOT include a "hashtags" key. Do NOT include any URLs in the body."""
 
 
 def _user_message(
@@ -204,22 +202,19 @@ def _user_message(
     voice: VoiceConfig,
     formatting: FormattingConfig,
 ) -> str:
-    return "\n\n".join(
-        [
-            _voice_block(voice),
-            f"BULLET MARKER: {formatting.bullet_marker}",
-            "TIMEFRAME: do NOT mention any timeframe, cadence, or the word 'news' "
-            "in the post. See the TIMEFRAME RULE in the system prompt.",
-            f"LENGTH (post body only, hashtags excluded): MIN={formatting.min_chars}, "
-            f"MAX={formatting.max_chars} characters.",
-            f"HASHTAGS: include exactly {formatting.evergreen_hashtags} as evergreen, "
-            f"plus {formatting.hashtags_min - len(formatting.evergreen_hashtags)}–"
-            f"{formatting.hashtags_max - len(formatting.evergreen_hashtags)} specific tags. "
-            f"No leading '#'. CamelCase multi-word tags.",
-            _trends_block(trends),
-            "Now write the post and return the JSON.",
-        ]
-    )
+    parts = [
+        _voice_block(voice),
+        f"BULLET MARKER: {formatting.bullet_marker}",
+        "TIMEFRAME: do NOT mention any timeframe, cadence, or the word 'news' "
+        "in the post. See the TIMEFRAME RULE in the system prompt.",
+        f"LENGTH (total post): MIN={formatting.min_chars}, "
+        f"MAX={formatting.max_chars} characters. Aim near the middle of that range.",
+        "URLS: do NOT include any URLs in the body. Sources live outside the post.",
+        "HASHTAGS: do NOT include any hashtags. The post is the entire post.",
+        _trends_block(trends),
+        "Now write the post and return the JSON.",
+    ]
+    return "\n\n".join(parts)
 
 
 def draft_post(

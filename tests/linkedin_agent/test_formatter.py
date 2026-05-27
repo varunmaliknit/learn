@@ -36,8 +36,19 @@ def test_strip_emoji_preserves_newlines() -> None:
     assert out.count("\n") == 3
 
 
+# Hashtags are disabled by default (FormattingConfig defaults to
+# hashtags_max=0). These tests cover the LEGACY hashtag-enabled
+# configuration so the helper keeps working if a user opts back in.
+def _legacy_hashtag_cfg() -> FormattingConfig:
+    return FormattingConfig(
+        hashtags_min=4,
+        hashtags_max=6,
+        evergreen_hashtags=["AI", "MachineLearning"],
+    )
+
+
 def test_normalize_hashtags_dedupes_and_caps() -> None:
-    cfg = FormattingConfig()
+    cfg = _legacy_hashtag_cfg()
     raw = ["AI", "ai", "MachineLearning", "LLM", "AIAgents", "LLM", "AIRegulation", "Robotics"]
     tags = normalize_hashtags(raw, cfg)
     assert tags[0] == "AI" and tags[1] == "MachineLearning"
@@ -47,15 +58,20 @@ def test_normalize_hashtags_dedupes_and_caps() -> None:
 
 
 def test_normalize_hashtags_strips_hash_prefix() -> None:
-    cfg = FormattingConfig()
+    cfg = _legacy_hashtag_cfg()
     tags = normalize_hashtags(["#AI", "#LLM"], cfg)
     assert all(not t.startswith("#") for t in tags)
 
 
 def test_normalize_hashtags_evergreen_always_present() -> None:
-    cfg = FormattingConfig()
+    cfg = _legacy_hashtag_cfg()
     tags = normalize_hashtags(["SomethingElse"], cfg)
     assert "AI" in tags and "MachineLearning" in tags
+
+
+def test_normalize_hashtags_returns_empty_when_disabled() -> None:
+    cfg = FormattingConfig()  # defaults: hashtags_max=0, no evergreen
+    assert normalize_hashtags(["AI", "LLM", "Whatever"], cfg) == []
 
 
 def test_enforce_length_trims_at_sentence_boundary() -> None:
@@ -126,24 +142,44 @@ def test_count_required_urls_partial() -> None:
     assert count_required_urls(body, urls) == 1
 
 
-def test_finalize_full_pipeline() -> None:
+def test_finalize_full_pipeline_default() -> None:
+    """Default FormattingConfig has hashtags disabled (hashtags_max=0).
+    Verify the full pipeline still produces a clean body and an empty
+    tags list regardless of what raw_tags the writer accidentally returns."""
     cfg = FormattingConfig(max_chars=500)
     body = (
-        "Hook line 🚀.\n\nBridge line.\n\n"
-        "🔹 Item one. Why it matters: it's big.\n   → https://a.com\n"
-        "🔹 Item two. Why it matters: it's bigger.\n   → https://b.com\n"
-        "🔹 Item three. Why it matters: biggest.\n   → https://c.com\n\n"
-        "The bigger picture: connections.\n\n"
+        "Hook line 🚀.\n\n"
+        "🔹 Item one. Why it matters: it's big.\n"
+        "🔹 Item two. Why it matters: it's bigger.\n"
+        "🔹 Item three. Why it matters: biggest.\n\n"
+        "What would you do? 💡"
+    )
+    # Even if the LLM hallucinates hashtags, finalize must drop them.
+    raw_tags = ["AI", "#LLM", "AIAgents"]
+    clean_body, clean_tags = finalize(body, raw_tags, cfg)
+    assert "🚀" not in clean_body and "💡" not in clean_body
+    assert clean_body.count("🔹") == 3
+    assert clean_tags == []
+
+
+def test_finalize_full_pipeline_legacy_hashtags() -> None:
+    """Opt-in hashtag config still works for users who re-enable them."""
+    cfg = FormattingConfig(
+        max_chars=500,
+        hashtags_min=4,
+        hashtags_max=6,
+        evergreen_hashtags=["AI", "MachineLearning"],
+    )
+    body = (
+        "Hook line 🚀.\n\n"
+        "🔹 Item one. Why it matters: it's big.\n"
+        "🔹 Item two. Why it matters: bigger.\n"
+        "🔹 Item three. Why it matters: biggest.\n\n"
         "What would you do? 💡"
     )
     raw_tags = ["AI", "#LLM", "AIAgents"]
     clean_body, clean_tags = finalize(body, raw_tags, cfg)
-    # No rogue emoji
     assert "🚀" not in clean_body and "💡" not in clean_body
-    # Bullets retained
     assert clean_body.count("🔹") == 3
-    # URLs retained
-    assert "https://a.com" in clean_body
-    # Evergreen tags present, hash prefixes stripped
     assert clean_tags[0] == "AI" and "MachineLearning" in clean_tags
     assert all(not t.startswith("#") for t in clean_tags)
