@@ -7,11 +7,18 @@ import re
 from urllib.parse import urlparse
 
 from linkedin_agent.models import Trend
+from linkedin_agent.search import CONSUMER_TECH_BLOG_HOSTS, TIER1_HOSTS
 
 logger = logging.getLogger(__name__)
 
 
 _TITLE_NORMALIZE = re.compile(r"[^a-z0-9 ]+")
+
+# Magnitudes for the source-quality nudge applied after raw LLM scoring.
+# Kept small so the LLM's impact judgement still dominates — these only
+# tip ties between two equally-scored items toward the premium publisher.
+TIER1_HOST_BOOST: float = 0.5
+CONSUMER_BLOG_HOST_PENALTY: float = 1.0
 
 
 def _normalize_title(t: str) -> str:
@@ -27,6 +34,34 @@ def _canonical_url(u: str) -> str:
         return f"{host}{path}"
     except Exception:  # noqa: BLE001
         return u
+
+
+def _host(u: str) -> str:
+    try:
+        return urlparse(u).netloc.lower().removeprefix("www.")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _host_tier_adjustment(url: str) -> float:
+    """Return the score nudge applied for the publisher of this URL.
+
+    +TIER1_HOST_BOOST for premium business / analyst press and primary
+    sources; -CONSUMER_BLOG_HOST_PENALTY for consumer-tech / SEO-bait
+    blogs; 0 for everything else. Keeps the LLM's impact score in charge
+    of overall ordering while making the top-3 pick lean toward premium
+    publishers when scores are close."""
+    host = _host(url)
+    if not host:
+        return 0.0
+    # Match subdomains too: feeds.bloomberg.com → bloomberg.com.
+    for tier1 in TIER1_HOSTS:
+        if host == tier1 or host.endswith("." + tier1):
+            return TIER1_HOST_BOOST
+    for blog in CONSUMER_TECH_BLOG_HOSTS:
+        if host == blog or host.endswith("." + blog):
+            return -CONSUMER_BLOG_HOST_PENALTY
+    return 0.0
 
 
 def _title_overlap_score(a: str, b: str) -> float:
@@ -79,6 +114,17 @@ def rank_and_dedupe(
         if r.impact_score <= 0:
             r.impact_score = 4.0
         keep.append(r)
+
+    # Apply the publisher-tier nudge. Premium business / analyst press gets a
+    # small boost; consumer-tech / SEO-bait blogs get a larger penalty. Keeps
+    # the LLM's impact score in charge of the rough ordering while shifting
+    # ties toward the higher-tier source.
+    for k in keep:
+        k.impact_score += _host_tier_adjustment(k.url)
+        # Clip below by zero so a heavy consumer-blog penalty can't make
+        # the score go negative (downstream UIs round-display scores).
+        if k.impact_score < 0:
+            k.impact_score = 0.0
 
     keep.sort(key=lambda t: t.impact_score, reverse=True)
 

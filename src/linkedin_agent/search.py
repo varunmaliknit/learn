@@ -28,15 +28,103 @@ from linkedin_agent.models import Trend
 logger = logging.getLogger(__name__)
 
 
+# Premium / reputable publication feeds. Organised by tier:
+#   - Tier 1: primary sources + premium business press + premium AI analysts.
+#     The ranker biases the top-3 selection toward these hosts (see
+#     ranker._tier1_host_boost) so trend bullets cite Bloomberg/FT/SemiAnalysis
+#     over Tom's Guide / Android Central even when both report the same event.
+#   - Tier 2: reputable tech press. Still acceptable, no boost, no penalty.
+# Consumer-tech / SEO-bait blogs are excluded from the feed list entirely;
+# the OpenAI web-search prompt also instructs against them.
 DEFAULT_RSS_FEEDS = [
+    # Tier 1: primary sources (labs / vendors / arXiv-style)
     "https://openai.com/news/rss.xml",
     "https://www.anthropic.com/news/rss.xml",
     "https://deepmind.google/blog/rss.xml",
     "https://huggingface.co/blog/feed.xml",
+    # Tier 1: premium business press
+    "https://feeds.bloomberg.com/technology/news.rss",
+    "https://www.ft.com/technology?format=rss",
+    "https://feeds.a.dj.com/rss/RSSWSJD.xml",
+    "https://www.economist.com/science-and-technology/rss.xml",
+    "https://www.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    "https://www.wired.com/feed/category/business/latest/rss",
+    # Tier 1: premium AI analysts / specialists
+    "https://www.semianalysis.com/feed",
+    "https://stratechery.com/feed/",
+    "https://importai.substack.com/feed",
+    "https://www.latent.space/feed",
+    "https://www.platformer.news/feed",
+    "https://garymarcus.substack.com/feed",
+    # Tier 2: reputable tech press
+    "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
     "https://techcrunch.com/category/artificial-intelligence/feed/",
     "https://venturebeat.com/category/ai/feed/",
     "https://the-decoder.com/feed/",
+    "https://www.bbc.co.uk/news/technology/rss.xml",
+    "https://www.404media.co/rss/",
 ]
+
+
+# Hosts treated as Tier-1 sources for ranker tie-breaks. Items from these
+# hosts get a small impact-score boost so the writer cites premium press
+# over consumer-tech blogs when both cover the same event. Keep this list
+# narrow — only publications with editorial standards and original
+# reporting belong here.
+TIER1_HOSTS: frozenset[str] = frozenset({
+    # Primary sources
+    "openai.com",
+    "anthropic.com",
+    "deepmind.google",
+    "ai.meta.com",
+    "huggingface.co",
+    "arxiv.org",
+    "nature.com",
+    "science.org",
+    "sec.gov",
+    # Premium business press
+    "bloomberg.com",
+    "ft.com",
+    "wsj.com",
+    "reuters.com",
+    "economist.com",
+    "nytimes.com",
+    "wired.com",
+    "theinformation.com",
+    # Premium AI analysts / specialists
+    "semianalysis.com",
+    "stratechery.com",
+    "importai.substack.com",
+    "latent.space",
+    "platformer.news",
+    "garymarcus.substack.com",
+})
+
+
+# Hosts explicitly downweighted as low-quality consumer-tech / SEO-bait.
+# The ranker applies a small penalty (see ranker._tier1_host_boost). These
+# domains are also banned in the OpenAI web-search prompt.
+CONSUMER_TECH_BLOG_HOSTS: frozenset[str] = frozenset({
+    "tomsguide.com",
+    "tomshardware.com",
+    "androidcentral.com",
+    "androidpolice.com",
+    "phonearena.com",
+    "9to5google.com",
+    "9to5mac.com",
+    "appleinsider.com",
+    "macrumors.com",
+    "pocket-lint.com",
+    "digitaltrends.com",
+    "androidauthority.com",
+    "xda-developers.com",
+    "techradar.com",
+    "gizmodo.com",
+    "engadget.com",
+    "slashgear.com",
+    "ubergizmo.com",
+    "lifewire.com",
+})
 
 
 # Query string keys that strongly suggest a search / listing / filter page,
@@ -182,6 +270,25 @@ by a major lab or platform)
 - Verifiable (real URLs to reputable sources — labs, major tech publications, \
 official blog posts, arXiv)
 
+SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
+- STRONGLY PREFER, in this order: the primary source itself (openai.com, \
+anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
+filing company's official press release / 10-K / 10-Q, the regulator's official site); \
+then premium business press (bloomberg.com, ft.com, wsj.com, reuters.com, \
+economist.com, nytimes.com); then premium AI analysts (semianalysis.com, \
+stratechery.com, importai.substack.com, latent.space, platformer.news); \
+then reputable tech press (theverge.com, techcrunch.com, theinformation.com, \
+wired.com, arstechnica.com).
+- BAN: consumer-tech blogs and SEO-bait sites. Do NOT cite tomsguide.com, \
+tomshardware.com, androidcentral.com, androidpolice.com, 9to5google.com, \
+9to5mac.com, appleinsider.com, macrumors.com, pocket-lint.com, digitaltrends.com, \
+androidauthority.com, xda-developers.com, techradar.com, gizmodo.com, engadget.com, \
+slashgear.com, lifewire.com. If the only URL you can find for an event is on one \
+of these sites, DROP the item rather than citing it.
+- When the same event is covered by multiple sources, ALWAYS choose the highest-tier \
+source available. A Bloomberg article about a funding round beats a TechCrunch \
+article about the same round, which beats an Android Central article about it.
+
 Return your findings as a clear list. For each item include:
 1. Title
 2. Source URL
@@ -240,10 +347,16 @@ any month-day-day-year span like `may-18-24-2026`. Domains like aitoolsrecap.com
 aiweeklynews.com, ainews.com (etc.) are aggregators by design. DROP these items \
 entirely — do not include them even with a low impact_score. Find the underlying \
 primary source instead, or omit the trend.
-- Reputable trade press (techcrunch.com, theverge.com, bloomberg.com, reuters.com, \
-ft.com, wsj.com, theinformation.com, semianalysis.com) is acceptable as a primary source \
-when the underlying event is a deal / regulatory / market move and no \
-better source exists.
+- SOURCE TIER PREFERENCE (use the highest-tier URL available for each event):
+  Tier 1 (preferred): bloomberg.com, ft.com, wsj.com, reuters.com, economist.com, \
+nytimes.com, semianalysis.com, stratechery.com, importai.substack.com, latent.space, \
+platformer.news, garymarcus.substack.com — plus any primary source above.
+  Tier 2 (acceptable): theverge.com, techcrunch.com, theinformation.com, wired.com, \
+arstechnica.com, venturebeat.com, the-decoder.com, 404media.co, bbc.co.uk.
+  BANNED (never cite — DROP the item if these are the only source): tomsguide.com, \
+tomshardware.com, androidcentral.com, androidpolice.com, 9to5google.com, 9to5mac.com, \
+appleinsider.com, macrumors.com, pocket-lint.com, digitaltrends.com, androidauthority.com, \
+xda-developers.com, techradar.com, gizmodo.com, engadget.com, slashgear.com, lifewire.com.
 - SPECIFICITY RULE (CRITICAL): every trend must point to a specific event with a \
 named entity — a product, capability, paper title, dollar amount, regulatory action, \
 benchmark result, or org-vs-org move. Vague items get DROPPED, not included.
