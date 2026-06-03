@@ -101,7 +101,7 @@ FORMATTING RULES (STRICT):
 - Do NOT include URLs in the post body. Sources live outside the post.
 - Do NOT include hashtags.
 - Use plain prose. No bold, no italics, no markdown headings.
-- Body length target: between MIN and MAX characters. Aim near the middle of that range.
+- Body length: the exact target range is given in the user message as MIN= and MAX= values.
 
 VOICE RULES (CRITICAL):
 - Write in CONCRETE language, not analyst-speak. Match the user's voice samples closely.
@@ -192,7 +192,7 @@ BAD: "X announced advancements." GOOD: "OpenAI shipped GPT-5o-mini at $0.15/M to
 FORMATTING RULES (STRICT):
 - 🔹 is the ONLY emoji allowed.
 - No URLs, no hashtags, plain prose, no markdown.
-- Body length: between MIN and MAX characters.
+- Body length: the exact target range is given in the user message as MIN= and MAX= values.
 
 VOICE RULES (CRITICAL):
 - Concrete language, not analyst-speak. Match voice samples closely.
@@ -229,10 +229,11 @@ def _user_message(
     formatting: FormattingConfig,
     num_themes: int,
 ) -> str:
+    n_bullets = num_themes if num_themes > 1 else len(themes[0].supporting)
     parts = [
         _voice_block(voice),
         f"BULLET MARKER: {formatting.bullet_marker}",
-        f"NUMBER OF BULLETS (N): {num_themes if num_themes > 1 else len(themes[0].supporting) if themes else 3}",
+        f"NUMBER OF BULLETS (N): {n_bullets}",
         "TIMEFRAME: do NOT mention any timeframe, cadence, or the word 'news'. "
         "See the TIMEFRAME RULE in the system prompt.",
         f"LENGTH (total post): MIN={formatting.min_chars}, "
@@ -284,7 +285,11 @@ def draft_post(
         ],
     )
     raw = response.choices[0].message.content or "{}"
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.error("draft_post: LLM returned invalid JSON: %s", exc)
+        raise RuntimeError("LLM returned invalid JSON for post body") from exc
     body = str(data.get("body", "")).strip()
     hashtags = [str(h).lstrip("#").strip() for h in data.get("hashtags", []) if str(h).strip()]
     if not body:

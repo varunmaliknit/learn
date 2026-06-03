@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import re
@@ -88,16 +89,15 @@ def rank_and_dedupe(
     cross_source_boost: float = 1.5,
 ) -> list[Trend]:
     """Combine, dedupe, score-boost cross-source hits, return top N by impact."""
-    # Start with OpenAI-sourced trends since they already have impact scores.
+    # Work on copies so callers' Trend objects are never mutated.
     keep: list[Trend] = []
     for t in openai_trends:
         if not t.url or not t.title:
             continue
         if any(_is_duplicate(t, k) for k in keep):
             continue
-        keep.append(t)
+        keep.append(copy.copy(t))
 
-    # Add RSS items only if they aren't already covered; small base impact.
     for r in rss_trends:
         if not r.url or not r.title:
             continue
@@ -108,23 +108,13 @@ def rank_and_dedupe(
         if dup_idx is not None:
             keep[dup_idx].impact_score += cross_source_boost
             continue
-        # Fresh RSS-only item. Preserve any LLM score already assigned upstream
-        # (search.score_rss_items); only apply the legacy 4.0 baseline when the
-        # item arrived completely unscored (impact_score==0), so we don't
-        # silently inflate low-but-legitimate LLM scores (e.g. a 2.0 filler
-        # item should stay at 2.0, not get bumped to 4.0).
-        if r.impact_score <= 0:
-            r.impact_score = 4.0
-        keep.append(r)
+        c = copy.copy(r)
+        if c.impact_score <= 0:
+            c.impact_score = 4.0
+        keep.append(c)
 
-    # Apply the publisher-tier nudge. Premium business / analyst press gets a
-    # small boost; consumer-tech / SEO-bait blogs get a larger penalty. Keeps
-    # the LLM's impact score in charge of the rough ordering while shifting
-    # ties toward the higher-tier source.
     for k in keep:
         k.impact_score += _host_tier_adjustment(k.url)
-        # Clip below by zero so a heavy consumer-blog penalty can't make
-        # the score go negative (downstream UIs round-display scores).
         if k.impact_score < 0:
             k.impact_score = 0.0
 
@@ -183,13 +173,14 @@ def rank_candidates(
     Applies a soft recency decay so older-but-strong items surface as
     corroborating evidence while fresh items of equal raw impact rank higher.
     """
+    # Work on copies so callers' Trend objects are never mutated.
     keep: list[Trend] = []
     for t in openai_trends:
         if not t.url or not t.title:
             continue
         if any(_is_duplicate(t, k) for k in keep):
             continue
-        keep.append(t)
+        keep.append(copy.copy(t))
 
     for r in rss_trends:
         if not r.url or not r.title:
@@ -201,9 +192,10 @@ def rank_candidates(
         if dup_idx is not None:
             keep[dup_idx].impact_score += cross_source_boost
             continue
-        if r.impact_score <= 0:
-            r.impact_score = 4.0
-        keep.append(r)
+        c = copy.copy(r)
+        if c.impact_score <= 0:
+            c.impact_score = 4.0
+        keep.append(c)
 
     for k in keep:
         k.impact_score += _host_tier_adjustment(k.url)

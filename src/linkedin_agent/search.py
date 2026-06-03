@@ -308,7 +308,7 @@ official blog posts, arXiv){topic_steer}
 
 SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
 - STRONGLY PREFER, in this order: the primary source itself (openai.com, \
-anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
+anthropik.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
 filing company's official press release / 10-K / 10-Q, the regulator's official site); \
 then premium business press (bloomberg.com, ft.com, wsj.com, reuters.com, \
 economist.com, nytimes.com); then premium AI analysts (semianalysis.com, \
@@ -832,6 +832,19 @@ def gather_candidate_pool(
             )
         except Exception as e:  # noqa: BLE001
             logger.error("Evidence pool — RSS scoring pass failed (continuing unscored): %s", e)
+
+    # Cap total pool before returning so rank_candidates works within budget.
+    all_items = openai_trends + rss_trends
+    if len(all_items) > max_items * 2:
+        # Keep the cap loose here (2x) — rank_candidates will trim to max_items
+        # after applying recency decay and dedup. Cutting too early would
+        # discard items that rank up after dedup-boost.
+        openai_trends = openai_trends[:max_items]
+        rss_trends = rss_trends[:max_items]
+        logger.info(
+            "Evidence pool — capped to %d OpenAI + %d RSS items (max_items=%d)",
+            len(openai_trends), len(rss_trends), max_items,
+        )
 
     return {"openai": openai_trends, "rss": rss_trends}
 
