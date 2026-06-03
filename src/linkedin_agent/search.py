@@ -275,9 +275,15 @@ TOPIC FOCUS (CRITICAL for evidence mode — affects which items to include):
 orchestration), model capabilities (new architectures, benchmarks, latency, context, multimodal), \
 applied/enterprise AI adoption (real deployments, patterns, ROI, org change), research breakthroughs \
 (architecture, training, interpretability, safety papers with concrete results).
+- ALSO PRIORITIZE financial-services AI: fraud detection and AML/KYC automation deployments, \
+AI copilots for credit analysts or financial advisors, core banking modernisation with AI, \
+model risk management tooling (SR 11-7 / Basel IV compliance), RegTech (EU AI Act in banking, \
+FCA/OCC guidance), named banks or financial institutions as actors in real AI deployments \
+(not generic "banks are exploring AI" — must name the institution and the use case).
 - DE-PRIORITIZE: pure funding announcements with no technical substance, generic business PR \
 ("X partners with Y to explore AI"), analyst predictions with no new facts, \
-executive quotes or conference summaries without specific technical details."""
+executive quotes or conference summaries without specific technical details, \
+"banks partner with AI vendor" press releases with no deployment specifics."""
     else:
         recency_rule = f"""\
 HARD RULE on recency:
@@ -309,12 +315,15 @@ official blog posts, arXiv){topic_steer}
 SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
 - STRONGLY PREFER, in this order: the primary source itself (openai.com, \
 anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
-filing company's official press release / 10-K / 10-Q, the regulator's official site); \
+filing company's official press release / 10-K / 10-Q, the regulator's official site — \
+including federalreserve.gov, occ.gov, fca.org.uk, eba.europa.eu, fsb.org); \
 then premium business press (bloomberg.com, ft.com, wsj.com, reuters.com, \
 economist.com, nytimes.com); then premium AI analysts (semianalysis.com, \
 stratechery.com, importai.substack.com, latent.space, platformer.news); \
 then reputable tech press (theverge.com, techcrunch.com, theinformation.com, \
-wired.com, arstechnica.com).
+wired.com, arstechnica.com); then reputable financial-services trade press \
+(risk.net, finextra.com, americanbanker.com, bankingtech.com, pymnts.com) \
+for stories where a named financial institution is the actor.
 - BAN: consumer-tech blogs and SEO-bait sites. Do NOT cite tomsguide.com, \
 tomshardware.com, androidcentral.com, androidpolice.com, 9to5google.com, \
 9to5mac.com, appleinsider.com, macrumors.com, pocket-lint.com, digitaltrends.com, \
