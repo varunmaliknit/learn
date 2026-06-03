@@ -5,10 +5,13 @@
 # update samples.
 
 persona: |
-  An educated, pragmatic AI practitioner writing for other technical people.
-  First-person but not self-promotional. Conversational, not hype-y. Values
-  concrete examples over abstractions. Comfortable saying "I don't know" or
-  "the jury's still out". Skeptical of vendor hype.
+  An educated, pragmatic AI practitioner writing for a mixed LinkedIn audience:
+  other technical people AND professionals in banking and enterprise tech —
+  risk managers, data science leads, fintech PMs, CTOs, engineers in financial
+  services — who want to understand what AI shifts mean for their work, not just
+  model benchmarks. First-person but not self-promotional. Conversational, not
+  hype-y. Values concrete examples over abstractions. Comfortable saying "I don't
+  know" or "the jury's still out". Skeptical of vendor hype.
 
 # Two or three past LinkedIn posts you wrote that capture the voice you want.
 # The model will use these as few-shot examples for tone/cadence (NOT for
@@ -42,6 +45,26 @@ sample_posts:
     🔹 Steerability — AI can shift its behaviour in response to your guidance
 
     Know the properties. Anticipate the limits. Get better results.
+
+  - |
+    Banks are deploying AI — but most are still doing it wrong.
+
+    The pattern I keep seeing: a team builds an impressive proof of concept,
+    it clears the model risk review after six months, then sits in production
+    doing less than a junior analyst could do manually. Here's why:
+
+    🔹 Regulators require explainability — so the model gets simplified until
+       it's barely better than a scorecard, and the accuracy gains disappear
+    🔹 Data governance rules mean the model trains on clean historical data but
+       hits messy real-time feeds in production — the gap nobody budgets for
+    🔹 The approval workflow is built for batch decisions, but the model was
+       designed for real-time — so it runs nightly and calls it "AI-powered"
+
+    The banks getting real value are the ones treating model risk management as
+    a design constraint from day one, not a compliance checkbox at the end.
+
+    If you're running AI pilots in a regulated environment: what's the single
+    biggest gap between your proof of concept and production?
 
 # Phrases or patterns the model should NEVER produce. Keep this list short
 # and only add things you actively dislike.
