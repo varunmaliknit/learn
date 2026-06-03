@@ -49,11 +49,10 @@ class VoiceConfig:
 @dataclass
 class FormattingConfig:
     bullet_marker: str = "🔹"  # bullets-as-emoji only
-    # Tight 600–900 char target keeps the post scannable on LinkedIn (no
-    # "see more" truncation) while still leaving room for an intro + 3
-    # bullets + 1 closing question.
-    max_chars: int = 900
-    min_chars: int = 600
+    # Single-deep-trend posts need a bit more room for 3-4 evidence bullets.
+    # Still safely under LinkedIn's ~1300-char "see more" fold.
+    max_chars: int = 1100
+    min_chars: int = 700
     max_trends: int = 3
     # Hashtags disabled by default. The writer no longer generates them
     # and the formatter renders the post body alone. Set hashtags_max > 0
@@ -96,14 +95,32 @@ class AppConfig:
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
     approval: ApprovalConfig = field(default_factory=ApprovalConfig)
+    # Legacy quality gates (kept for back-compat; theme gates take precedence when
+    # num_themes > 0 and the synthesis path is active).
     min_impact_score_to_post: float = 6.0
-    # Per-trend quality floor. EVERY one of the 3 trends in a post must score
-    # at least this, otherwise skip the run rather than padding with weak trends.
     min_trend_quality_floor: float = 5.0
     # Lookback window in hours for the search + RSS pass.
     # 24 = daily cadence, 168 = weekly (default).
     lookback_hours: int = 168
     extra_rss_feeds: list[str] = field(default_factory=list)
+
+    # --- Synthesis / theme layer ---
+    # How far back to gather corroborating evidence (~5 weeks default).
+    evidence_window_hours: int = 840
+    # Post structure: 1 = single deep trend (default); 3 = classic three-bullet format.
+    # This controls both how many themes the synthesizer picks and how many bullets the
+    # writer generates.
+    num_themes: int = 1
+    # A theme needs this many corroborating data points to be publishable.
+    min_evidence_per_theme: int = 3
+    # Aggregate theme strength floor (analogous to min_impact_score_to_post).
+    min_theme_strength: float = 6.0
+    # Max candidates fed to the synthesis pass.
+    max_candidate_items: int = 25
+    # Model for the synthesis clustering pass. Falls back to openai_model if unset.
+    # Point at a stronger reasoning model for best clustering quality.
+    synthesis_model: str = ""
+    synthesis_temperature: float = 0.2
 
 
 def _env(name: str, default: str = "") -> str:
@@ -182,4 +199,11 @@ def load_config(voice_path: str | Path | None = "voice.yaml") -> AppConfig:
         min_impact_score_to_post=float(_env("LINKEDIN_AGENT_MIN_IMPACT", "6.0")),
         min_trend_quality_floor=float(_env("LINKEDIN_AGENT_QUALITY_FLOOR", "5.0")),
         lookback_hours=int(_env("LINKEDIN_AGENT_LOOKBACK_HOURS", "168")),
+        evidence_window_hours=int(_env("LINKEDIN_AGENT_EVIDENCE_WINDOW_HOURS", "840")),
+        num_themes=int(_env("LINKEDIN_AGENT_NUM_THEMES", "1")),
+        min_evidence_per_theme=int(_env("LINKEDIN_AGENT_MIN_EVIDENCE_PER_THEME", "3")),
+        min_theme_strength=float(_env("LINKEDIN_AGENT_MIN_THEME_STRENGTH", "6.0")),
+        max_candidate_items=int(_env("LINKEDIN_AGENT_MAX_CANDIDATES", "25")),
+        synthesis_model=_env("LINKEDIN_AGENT_SYNTHESIS_MODEL", ""),
+        synthesis_temperature=float(_env("LINKEDIN_AGENT_SYNTHESIS_TEMP", "0.2")),
     )

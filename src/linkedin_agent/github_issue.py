@@ -24,12 +24,26 @@ HASHTAGS_START = "<!-- linkedin-hashtags START -->"
 HASHTAGS_END = "<!-- linkedin-hashtags END -->"
 
 
-def build_issue_body(draft: Draft, approve_url: str, reject_url: str) -> str:
-    """Build the markdown body for the approval issue."""
-    sources = "\n".join(
+def _build_sources_block(draft: Draft) -> str:
+    """Render sources grouped by theme when themes are available, else flat list."""
+    if draft.themes:
+        parts = []
+        for theme in draft.themes:
+            parts.append(f"**{theme.thesis}**")
+            for t in theme.supporting:
+                parts.append(
+                    f"- [{t.title}]({t.url}) — impact {t.impact_score:.1f} ({t.short_source()})"
+                )
+        return "\n".join(parts)
+    return "\n".join(
         f"- [{t.title}]({t.url}) — impact {t.impact_score:.1f} ({t.short_source()})"
         for t in draft.trends
     )
+
+
+def build_issue_body(draft: Draft, approve_url: str, reject_url: str) -> str:
+    """Build the markdown body for the approval issue."""
+    sources = _build_sources_block(draft)
     # Hashtags section is only rendered when the draft actually has tags;
     # the writer no longer generates them by default. The markers stay
     # available as a stable API for user-edits that want to add tags back.

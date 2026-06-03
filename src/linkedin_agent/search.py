@@ -247,28 +247,64 @@ def _window_phrase(lookback_hours: int) -> str:
     return f"{lookback_hours} hours"
 
 
-def _web_search_prompt(now: datetime | None = None, lookback_hours: int = 168) -> str:
+def _web_search_prompt(
+    now: datetime | None = None,
+    lookback_hours: int = 168,
+    mode: str = "news",
+) -> str:
     now = now or datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
     window_start = (now - timedelta(hours=lookback_hours)).strftime("%Y-%m-%d")
     window = _window_phrase(lookback_hours)
+
+    if mode == "evidence":
+        recency_rule = f"""\
+RECENCY GUIDANCE (not a hard cut-off in evidence mode):
+- PREFER items published within the window ({window_start} to {today}).
+- Older items are acceptable ONLY when they are load-bearing corroborating evidence \
+for an ongoing technical or market pattern — not just any older story.
+- Exclude items you cannot attribute a real publication date to."""
+        aim_line = (
+            f"Aim for 15-25 items, with a mix of ages inside the window. "
+            f"Return fewer if quality forces it — do NOT pad with weak or off-topic items."
+        )
+        topic_steer = """\
+
+TOPIC FOCUS (CRITICAL for evidence mode — affects which items to include):
+- PRIORITIZE: AI engineering & tooling (agent frameworks, dev tools, evals, inference/serving, \
+orchestration), model capabilities (new architectures, benchmarks, latency, context, multimodal), \
+applied/enterprise AI adoption (real deployments, patterns, ROI, org change), research breakthroughs \
+(architecture, training, interpretability, safety papers with concrete results).
+- DE-PRIORITIZE: pure funding announcements with no technical substance, generic business PR \
+("X partners with Y to explore AI"), analyst predictions with no new facts, \
+executive quotes or conference summaries without specific technical details."""
+    else:
+        recency_rule = f"""\
+HARD RULE on recency:
+- Only include items whose ORIGINAL publication date falls inside that window.
+- If the original article was published earlier and only re-shared during the window, EXCLUDE it.
+- If you cannot verify the publication date from the search result, EXCLUDE the item.
+- Prefer the original primary source over aggregator re-coverage."""
+        aim_line = (
+            f"Aim for 6-10 items, ALL within the {window} window. "
+            f"If you cannot find 6 items that genuinely fit, return fewer rather than "
+            f"padding with older items. Rank them by impact — the strongest items belong at the top."
+        )
+        topic_steer = ""
+
     return f"""\
 Today's date is {today} (UTC). Search the web for the most important AI trends, \
 research breakthroughs, and product launches PUBLISHED in the last {window} \
 (between {window_start} and {today} UTC).
 
-HARD RULE on recency:
-- Only include items whose ORIGINAL publication date falls inside that window.
-- If the original article was published earlier and only re-shared during the window, EXCLUDE it.
-- If you cannot verify the publication date from the search result, EXCLUDE the item.
-- Prefer the original primary source over aggregator re-coverage.
+{recency_rule}
 
 Focus on items that are:
 - High-impact (major model release, large funding round, regulatory move, notable \
 research result, significant safety or capability development, big product launch \
 by a major lab or platform)
 - Verifiable (real URLs to reputable sources — labs, major tech publications, \
-official blog posts, arXiv)
+official blog posts, arXiv){topic_steer}
 
 SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
 - STRONGLY PREFER, in this order: the primary source itself (openai.com, \
@@ -297,12 +333,10 @@ Return your findings as a clear list. For each item include:
 5. One-line factual summary (what happened)
 6. Why it matters in 1-2 sentences (for an educated technical reader)
 
-Aim for 6-10 items, ALL within the {window} window. If you cannot find 6 items \
-that genuinely fit, return fewer rather than padding with older items. Rank \
-them by impact — the strongest items belong at the top."""
+{aim_line}"""
 
 
-WEB_SEARCH_PROMPT = _web_search_prompt()  # default for back-compat
+WEB_SEARCH_PROMPT = _web_search_prompt()  # default (news mode) for back-compat
 
 
 def _structure_prompt(now: datetime | None = None, lookback_hours: int = 168) -> str:
@@ -394,8 +428,15 @@ def _structured_trends_from_text(
     model: str,
     search_text: str,
     lookback_hours: int = 168,
+    soft_recency: bool = False,
 ) -> list[Trend]:
-    """Second LLM pass: turn the free-form search result into JSON trends."""
+    """Second LLM pass: turn the free-form search result into JSON trends.
+
+    When soft_recency=True (evidence-gathering mode) the hard recency gate is
+    skipped — older items are kept and down-weighted by the ranker's recency
+    decay instead of being dropped here. This allows a ~5-week pool to contain
+    older corroborating data points for trend synthesis.
+    """
     # Import locally to avoid a hard formatter↔search circular at module load.
     from linkedin_agent.formatter import _strip_tracking
 
@@ -425,9 +466,10 @@ def _structured_trends_from_text(
             published_raw = str(item.get("published_at", "")).strip()
             published_at: datetime | None = _parse_published_at(published_raw)
 
-            # Hard recency gate: if we have a publication date and it's older
-            # than (lookback_hours + 12h grace), drop the item.
-            if published_at is not None and published_at < cutoff:
+            # Hard recency gate (skipped in evidence/soft_recency mode — the ranker
+            # applies a soft decay instead so older items can still serve as
+            # corroborating evidence for a multi-week pattern).
+            if not soft_recency and published_at is not None and published_at < cutoff:
                 logger.info(
                     "dropping trend %r as too old: published_at=%s, cutoff=%s",
                     item.get("title"),
@@ -510,12 +552,17 @@ def _parse_published_at(raw: str) -> datetime | None:
     return dt
 
 
-def _openai_web_search(client: OpenAI, model: str, lookback_hours: int = 168) -> str:
+def _openai_web_search(
+    client: OpenAI,
+    model: str,
+    lookback_hours: int = 168,
+    mode: str = "news",
+) -> str:
     """Call the Responses API with the web_search_preview tool, return text output."""
     response = client.responses.create(
         model=model,
         tools=[{"type": "web_search_preview"}],
-        input=_web_search_prompt(lookback_hours=lookback_hours),
+        input=_web_search_prompt(lookback_hours=lookback_hours, mode=mode),
     )
     # The Responses API returns a list of output items; `output_text` is the
     # convenience accessor for the concatenated assistant text.
@@ -529,13 +576,19 @@ def fetch_openai_trends(
     api_key: str,
     model: str = "gpt-4o",
     lookback_hours: int = 168,
+    mode: str = "news",
 ) -> list[Trend]:
     """Fetch trends via OpenAI web search + structure pass."""
     client = OpenAI(api_key=api_key)
-    search_text = _openai_web_search(client, model, lookback_hours=lookback_hours)
+    search_text = _openai_web_search(client, model, lookback_hours=lookback_hours, mode=mode)
     if not search_text.strip():
         return []
-    return _structured_trends_from_text(client, model, search_text, lookback_hours=lookback_hours)
+    soft_recency = mode == "evidence"
+    return _structured_trends_from_text(
+        client, model, search_text,
+        lookback_hours=lookback_hours,
+        soft_recency=soft_recency,
+    )
 
 
 _RSS_SCORE_PROMPT = """\
@@ -574,7 +627,7 @@ def score_rss_items(client: OpenAI, model: str, items: list[Trend]) -> list[Tren
         return items
 
     # Score the most recent N items only; older items are unlikely to win on score.
-    max_to_score = 30
+    max_to_score = 40
     ordered = sorted(
         items,
         key=lambda t: t.published_at or datetime.min.replace(tzinfo=timezone.utc),
@@ -713,6 +766,72 @@ def gather_trends(
             )
         except Exception as e:  # noqa: BLE001
             logger.error("RSS scoring pass failed (continuing unscored): %s", e)
+
+    return {"openai": openai_trends, "rss": rss_trends}
+
+
+def gather_candidate_pool(
+    openai_api_key: str,
+    model: str = "gpt-4o",
+    extra_rss_feeds: list[str] | None = None,
+    evidence_window_hours: int = 840,
+    max_items: int = 25,
+) -> dict[str, list[Trend]]:
+    """Gather a wider evidence pool for theme synthesis.
+
+    Uses a longer lookback window and soft recency (no hard date gate) so that
+    multiple data points spanning several weeks can establish a genuine pattern.
+    All existing source-quality and URL-quality filters are preserved.
+
+    Returns {"openai": [...], "rss": [...]}.  Callers should pass the result to
+    ranker.rank_candidates (which applies recency decay) before synthesizing.
+    """
+    feeds = DEFAULT_RSS_FEEDS + list(extra_rss_feeds or [])
+    window = _window_phrase(evidence_window_hours)
+    openai_trends: list[Trend] = []
+    rss_trends: list[Trend] = []
+
+    if openai_api_key:
+        try:
+            openai_trends = fetch_openai_trends(
+                openai_api_key,
+                model,
+                lookback_hours=evidence_window_hours,
+                mode="evidence",
+            )
+            logger.info(
+                "Evidence pool — OpenAI web search returned %d trends (window=%s)",
+                len(openai_trends),
+                window,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Evidence pool — OpenAI web search failed: %s", e)
+    else:
+        logger.warning("OPENAI_API_KEY is empty; skipping web search for evidence pool")
+
+    try:
+        rss_trends = fetch_rss_recent(feeds, hours=evidence_window_hours)
+        logger.info(
+            "Evidence pool — RSS gathered %d items in last %s",
+            len(rss_trends),
+            window,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Evidence pool — RSS gather failed: %s", e)
+
+    if rss_trends and openai_api_key:
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            rss_trends = score_rss_items(client, model, rss_trends)
+            logger.info(
+                "Evidence pool — RSS scoring pass complete: top scores %s",
+                sorted(
+                    (round(t.impact_score, 1) for t in rss_trends),
+                    reverse=True,
+                )[:5],
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Evidence pool — RSS scoring pass failed (continuing unscored): %s", e)
 
     return {"openai": openai_trends, "rss": rss_trends}
 
