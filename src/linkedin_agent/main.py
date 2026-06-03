@@ -18,9 +18,10 @@ from linkedin_agent import (
     ranker,
     search,
     signed_url,
+    synthesizer,
     writer,
 )
-from linkedin_agent.models import Draft
+from linkedin_agent.models import Draft, Theme, Trend
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,95 +55,124 @@ def _check_token_health(cfg: cfg_module.AppConfig) -> None:
         logger.warning("LinkedIn token health check failed: %s", e)
 
 
+def _select_publishable_themes(
+    themes: list[Theme],
+    num_themes: int,
+    min_evidence: int,
+    min_strength: float,
+) -> list[Theme] | None:
+    """Return num_themes publishable themes or None if quality gates fail."""
+    strong = [
+        t for t in themes
+        if t.evidence_count >= min_evidence and t.strength_score >= min_strength
+    ]
+    if len(strong) < num_themes:
+        return None
+    return strong[:num_themes]
+
+
+def _themes_to_trends_union(themes: list[Theme]) -> list[Trend]:
+    """Flatten theme supporting trends into a deduped ordered list for back-compat."""
+    seen: set[str] = set()
+    out: list[Trend] = []
+    for theme in themes:
+        for t in theme.supporting:
+            key = t.url or t.title
+            if key and key not in seen:
+                seen.add(key)
+                out.append(t)
+    return out
+
+
 def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
-    """Search, rank, draft, open an issue, send the approval email."""
+    """Search, rank, synthesize, draft, open an issue, send the approval email."""
     draft_id = args.draft_id or _today_id()
-    window = search._window_phrase(cfg.lookback_hours)
-    logger.info("Drafting LinkedIn post for %s (lookback window: %s)", draft_id, window)
+    evidence_window = search._window_phrase(cfg.evidence_window_hours)
+    logger.info(
+        "Drafting LinkedIn post for %s (evidence window: %s, num_themes: %d)",
+        draft_id, evidence_window, cfg.num_themes,
+    )
 
     _check_token_health(cfg)
 
-    raw = search.gather_trends(
+    # ── 1. Gather a wider evidence pool ───────────────────────────────────────
+    raw = search.gather_candidate_pool(
         cfg.openai_api_key,
         cfg.openai_model,
         cfg.extra_rss_feeds,
-        lookback_hours=cfg.lookback_hours,
+        evidence_window_hours=cfg.evidence_window_hours,
+        max_items=cfg.max_candidate_items,
     )
-    top = ranker.rank_and_dedupe(
+
+    pool = ranker.rank_candidates(
         raw["openai"],
         raw["rss"],
-        top_n=cfg.formatting.max_trends,
+        top_n=cfg.max_candidate_items,
     )
-    if not top:
-        logger.warning("No trends found. Sending 'skipped' email and exiting.")
-        return _send_skip_email(cfg, draft_id, reason=f"no trends found in last {window}")
-
-    if top[0].impact_score < cfg.min_impact_score_to_post:
-        logger.info(
-            "Top trend impact %.1f below threshold %.1f — skipping this run.",
-            top[0].impact_score,
-            cfg.min_impact_score_to_post,
-        )
+    if not pool:
+        logger.warning("No candidates found. Sending 'skipped' email and exiting.")
         return _send_skip_email(
-            cfg, draft_id, reason=f"no high-impact AI trends in last {window}"
+            cfg, draft_id,
+            reason=f"no AI developments found in the last {evidence_window}",
         )
 
-    if len(top) < 3:
-        logger.warning(
-            "Only %d trends after ranking; trying to backfill from RSS",
-            len(top),
-        )
-        seen_urls = {t.url for t in top}
-        for r in raw["rss"]:
-            if len(top) >= 3:
-                break
-            if r.url in seen_urls or not r.url:
-                continue
-            r.why_it_matters = r.why_it_matters or r.one_line_summary or "Recent development."
-            r.impact_score = max(r.impact_score, 5.0)
-            top.append(r)
+    # ── 2. Synthesize themes ──────────────────────────────────────────────────
+    synthesis_model = cfg.synthesis_model or cfg.openai_model
+    themes = synthesizer.synthesize_themes(
+        cfg.openai_api_key,
+        synthesis_model,
+        pool,
+        num_themes=cfg.num_themes,
+        min_evidence_per_theme=cfg.min_evidence_per_theme,
+        temperature=cfg.synthesis_temperature,
+    )
 
-    if len(top) < 3:
-        logger.warning("Could not assemble 3 trends; skipping this run.")
-        return _send_skip_email(cfg, draft_id, reason="fewer than 3 viable trends found")
+    # ── 3. Quality gates on themes ────────────────────────────────────────────
+    publishable = _select_publishable_themes(
+        themes,
+        num_themes=cfg.num_themes,
+        min_evidence=cfg.min_evidence_per_theme,
+        min_strength=cfg.min_theme_strength,
+    )
+    if publishable is None:
+        if not themes:
+            reason = (
+                f"synthesis found no coherent trend patterns in the last {evidence_window}. "
+                f"The pool had {len(pool)} items but none clustered into a strong theme."
+            )
+        else:
+            scores = ", ".join(
+                f"{t.thesis[:40]!r}: strength={t.strength_score:.1f} evidence={t.evidence_count}"
+                for t in themes
+            )
+            reason = (
+                f"could not assemble {cfg.num_themes} theme(s) meeting the quality bar "
+                f"(min_evidence={cfg.min_evidence_per_theme}, "
+                f"min_strength={cfg.min_theme_strength:.1f}). "
+                f"Best candidates: {scores}."
+            )
+        logger.info("Theme quality gate failed — skipping: %s", reason)
+        return _send_skip_email(cfg, draft_id, reason=reason)
 
-    # Quality floor: every trend used in the post must score at least the
-    # per-trend threshold. If we can't muster 3 trends that clear the bar,
-    # skip the run rather than padding the post with weak trends.
-    floor = cfg.min_trend_quality_floor
-    strong_enough = [t for t in top[:3] if t.impact_score >= floor]
-    if len(strong_enough) < 3:
-        scores = ", ".join(f"{t.impact_score:.1f}" for t in top[:3])
-        logger.info(
-            "Top 3 trend scores [%s] below per-trend floor %.1f — skipping this run.",
-            scores,
-            floor,
-        )
-        return _send_skip_email(
-            cfg,
-            draft_id,
-            reason=(
-                f"only {len(strong_enough)}/3 trends cleared the quality floor of "
-                f"{floor:.1f} (scores were: {scores}). "
-                f"The last {window} of AI activity isn't strong enough for a post in your voice."
-            ),
-        )
-
+    # ── 4. Draft and format ───────────────────────────────────────────────────
     body, hashtags = writer.draft_post(
         cfg.openai_api_key,
         cfg.openai_model,
-        top,
+        publishable,
         cfg.voice,
         cfg.formatting,
+        num_themes=cfg.num_themes,
         lookback_hours=cfg.lookback_hours,
     )
     body, hashtags = formatter.finalize(body, hashtags, cfg.formatting)
 
+    trends_union = _themes_to_trends_union(publishable)
     draft = Draft(
         draft_id=draft_id,
         body=body,
         hashtags=hashtags,
-        trends=top[:3],
+        trends=trends_union,
+        themes=publishable,
         generated_at=datetime.now(timezone.utc),
     )
 
@@ -151,10 +181,14 @@ def cmd_draft(cfg: cfg_module.AppConfig, args: argparse.Namespace) -> int:
         print(draft.full_text())
         print("=" * 70)
         print()
-        print("Trends:")
-        for t in draft.trends:
-            print(f"  - {t.title}  ({t.impact_score:.1f})")
-            print(f"    {t.url}")
+        print("Themes:")
+        for i, th in enumerate(draft.themes, 1):
+            print(f"  Theme {i}: {th.thesis}")
+            print(f"    Direction: {th.direction}")
+            print(f"    Strength={th.strength_score:.1f}  Novelty={th.novelty_score:.1f}  Evidence={th.evidence_count}")
+            for t in th.supporting:
+                print(f"      - {t.title}  ({t.impact_score:.1f})")
+                print(f"        {t.url}")
         return 0
 
     return _create_issue_and_email(cfg, draft)
