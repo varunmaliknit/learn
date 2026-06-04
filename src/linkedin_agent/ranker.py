@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from linkedin_agent.models import Trend
@@ -127,15 +129,14 @@ def rank_and_dedupe(
             k.impact_score = 0.0
 
     keep.sort(key=lambda t: t.impact_score, reverse=True)
+    _log_pool(keep, top_n, label="rank_and_dedupe")
 
-    # Diagnostic log: dump every candidate with its source and final score so we
-    # can tell whether the quality-floor gate fires because no candidates exist,
-    # because the LLM scored them low, or because the flat 4.0 base for
-    # RSS-only items kept them under the floor.
+    return keep[:top_n]
+
+
+def _log_pool(keep: list[Trend], top_n: int, label: str = "ranker") -> None:
     if keep:
-        logger.info(
-            "ranker pool (%d candidates, top %d returned):", len(keep), top_n
-        )
+        logger.info("%s pool (%d candidates, top %d returned):", label, len(keep), top_n)
         for i, t in enumerate(keep, 1):
             marker = "*" if i <= top_n else " "
             title = t.title if len(t.title) <= 80 else t.title[:77] + "..."
@@ -149,6 +150,67 @@ def rank_and_dedupe(
                 t.short_source(),
             )
     else:
-        logger.info("ranker pool is empty after dedup")
+        logger.info("%s pool is empty after dedup", label)
 
+
+def _recency_decay(published_at: datetime | None, half_life_hours: float) -> float:
+    """Return a score discount in [0, 2.5] based on age.
+
+    Newer items are undiscounted; discount grows slowly with age so a strong
+    but 3-week-old item can still outrank a weak fresh one.  Half-life of 336h
+    (2 weeks) means a 4-week-old item loses ~2.5 points.
+    """
+    if published_at is None or half_life_hours <= 0:
+        return 0.0
+    age_hours = max(
+        0.0,
+        (datetime.now(timezone.utc) - published_at).total_seconds() / 3600,
+    )
+    # Exponential-decay: discount = 2.5 * (1 - 0.5^(age/half_life))
+    decay = 2.5 * (1.0 - math.pow(0.5, age_hours / half_life_hours))
+    return min(decay, 2.5)
+
+
+def rank_candidates(
+    openai_trends: list[Trend],
+    rss_trends: list[Trend],
+    top_n: int = 25,
+    cross_source_boost: float = 1.5,
+    recency_half_life_hours: float = 336.0,
+) -> list[Trend]:
+    """Like rank_and_dedupe but returns a larger ranked pool (for synthesis).
+
+    Applies a soft recency decay so older-but-strong items surface as
+    corroborating evidence while fresh items of equal raw impact rank higher.
+    """
+    keep: list[Trend] = []
+    for t in openai_trends:
+        if not t.url or not t.title:
+            continue
+        if any(_is_duplicate(t, k) for k in keep):
+            continue
+        keep.append(t)
+
+    for r in rss_trends:
+        if not r.url or not r.title:
+            continue
+        dup_idx = next(
+            (i for i, k in enumerate(keep) if _is_duplicate(r, k)),
+            None,
+        )
+        if dup_idx is not None:
+            keep[dup_idx].impact_score += cross_source_boost
+            continue
+        if r.impact_score <= 0:
+            r.impact_score = 4.0
+        keep.append(r)
+
+    for k in keep:
+        k.impact_score += _host_tier_adjustment(k.url)
+        k.impact_score -= _recency_decay(k.published_at, recency_half_life_hours)
+        if k.impact_score < 0:
+            k.impact_score = 0.0
+
+    keep.sort(key=lambda t: t.impact_score, reverse=True)
+    _log_pool(keep, top_n, label="rank_candidates")
     return keep[:top_n]
