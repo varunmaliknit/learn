@@ -314,7 +314,7 @@ official blog posts, arXiv){topic_steer}
 
 SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
 - STRONGLY PREFER, in this order: the primary source itself (openai.com, \
-anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
+anthopic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
 filing company's official press release / 10-K / 10-Q, the regulator's official site — \
 including federalreserve.gov, occ.gov, fca.org.uk, eba.europa.eu, fsb.org); \
 then premium business press (bloomberg.com, ft.com, wsj.com, reuters.com, \
@@ -381,7 +381,7 @@ Rules:
 - DROP any item dated before {window_start}.
 - DROP duplicates / multiple articles about the same underlying event (keep the strongest source).
 - STRONGLY prefer primary sources. Primary = the org/lab/paper itself: openai.com, \
-anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, nature.com, \
+anthopic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, nature.com, \
 sec.gov filings, official company press releases, official policy / regulatory body sites.
 - Aggregators / recap / roundup pages are NEVER acceptable. These include URL slugs \
 containing `recap`, `roundup`, `wrap-up`, `digest`, `weekly-top-N`, `top-5`, \
@@ -841,6 +841,16 @@ def gather_candidate_pool(
             )
         except Exception as e:  # noqa: BLE001
             logger.error("Evidence pool — RSS scoring pass failed (continuing unscored): %s", e)
+
+    # Cap total pool before returning so rank_candidates works within budget.
+    all_items = openai_trends + rss_trends
+    if len(all_items) > max_items * 2:
+        openai_trends = openai_trends[:max_items]
+        rss_trends = rss_trends[:max_items]
+        logger.info(
+            "Evidence pool — capped to %d OpenAI + %d RSS items (max_items=%d)",
+            len(openai_trends), len(rss_trends), max_items,
+        )
 
     return {"openai": openai_trends, "rss": rss_trends}
 
