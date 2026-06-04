@@ -66,11 +66,7 @@ DEFAULT_RSS_FEEDS = [
 ]
 
 
-# Hosts treated as Tier-1 sources for ranker tie-breaks. Items from these
-# hosts get a small impact-score boost so the writer cites premium press
-# over consumer-tech blogs when both cover the same event. Keep this list
-# narrow — only publications with editorial standards and original
-# reporting belong here.
+# Hosts treated as Tier-1 sources for ranker tie-breaks.
 TIER1_HOSTS: frozenset[str] = frozenset({
     # Primary sources
     "openai.com",
@@ -102,8 +98,6 @@ TIER1_HOSTS: frozenset[str] = frozenset({
 
 
 # Hosts explicitly downweighted as low-quality consumer-tech / SEO-bait.
-# The ranker applies a small penalty (see ranker._tier1_host_boost). These
-# domains are also banned in the OpenAI web-search prompt.
 CONSUMER_TECH_BLOG_HOSTS: frozenset[str] = frozenset({
     "tomsguide.com",
     "tomshardware.com",
@@ -127,20 +121,15 @@ CONSUMER_TECH_BLOG_HOSTS: frozenset[str] = frozenset({
 })
 
 
-# Query string keys that strongly suggest a search / listing / filter page,
-# not a specific article.
 _LISTING_QUERY_KEYS = {
     "keywords", "search", "q", "query", "tag", "tags",
     "category", "categories", "topic", "topics", "filter",
 }
 
-# Path segments that indicate a category or tag hub.
 _LISTING_PATH_SEGMENTS = {
     "category", "categories", "tag", "tags", "topic", "topics",
 }
 
-# Last-path-segment names that are clearly hub / section pages rather than
-# specific articles.
 _LISTING_LAST_SEGMENTS = {
     "", "ai", "artificial-intelligence", "artificial_intelligence",
     "machine-learning", "machine_learning", "machinelearning",
@@ -152,9 +141,7 @@ _LISTING_LAST_SEGMENTS = {
 
 
 def _is_listing_url(url: str) -> bool:
-    """Heuristic: URL looks like a search / category / listing page, not a
-    specific article. Used to drop trends that have no concrete event to
-    write about (e.g. "newsroom.ibm.com/press-releases-ai?keywords=2026")."""
+    """Heuristic: URL looks like a search / category / listing page, not a specific article."""
     if not url:
         return True
     try:
@@ -170,24 +157,17 @@ def _is_listing_url(url: str) -> bool:
     path = parsed.path.rstrip("/")
     segments = [s for s in path.split("/") if s]
     if not segments:
-        return True  # bare domain
+        return True
     if any(s.lower() in _LISTING_PATH_SEGMENTS for s in segments):
         return True
     last = segments[-1].lower()
     if last in _LISTING_LAST_SEGMENTS:
         return True
-    # Bare date-archive paths like /2026/, /2026/05/, /2026/05/26/ — every
-    # segment is numeric, so there is no article slug. Real articles look
-    # like /2026/05/26/openai-files-for-ipo/ where the last segment is the
-    # slug, not a number.
     if all(s.isdigit() for s in segments):
         return True
     return False
 
 
-# Slug patterns that strongly indicate an aggregator / recap / roundup article
-# (not a primary report of a specific event). These are URL substrings,
-# matched case-insensitively against the path.
 _AGGREGATOR_SLUG_PATTERN = re.compile(
     r"(?:^|[/_-])("
     r"recap|roundup|round-up|wrap-up|wrapup|digest"
@@ -198,7 +178,7 @@ _AGGREGATOR_SLUG_PATTERN = re.compile(
     r"|ai-tools-updates|ai-tools-recap|ai-tools-digest|ai-tools-of"
     r"|ai-by-ai"
     r"|this-week-in-ai|week-in-ai|today-in-ai|in-ai-today"
-    r"|ai-news"  # any slug containing "ai-news-..." is roundup/aggregator
+    r"|ai-news"
     r"|news-recap|news-roundup|news-digest|latest-ai"
     r"|briefing|morning-briefing|evening-briefing"
     r"|daily-briefing|weekly-briefing|nightly-briefing"
@@ -206,8 +186,6 @@ _AGGREGATOR_SLUG_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Hosts that exist primarily to recap / aggregate other publishers' AI coverage.
-# Add new hosts here as we encounter them in the wild.
 _AGGREGATOR_HOSTS = {
     "aitoolsrecap.com",
     "ai-tools-recap.com",
@@ -222,9 +200,7 @@ _AGGREGATOR_HOSTS = {
 
 
 def _is_aggregator_url(url: str) -> bool:
-    """Heuristic: URL is a recap / roundup / aggregator article rather than a
-    primary report. Such pages mix multiple events under a generic headline,
-    so the writer has no concrete event to anchor the bullet on."""
+    """Heuristic: URL is a recap / roundup / aggregator article."""
     if not url:
         return False
     try:
@@ -240,7 +216,6 @@ def _is_aggregator_url(url: str) -> bool:
 
 
 def _window_phrase(lookback_hours: int) -> str:
-    """Human-friendly phrase for the lookback window (e.g. '24 hours', '7 days')."""
     if lookback_hours % 24 == 0 and lookback_hours >= 24:
         days = lookback_hours // 24
         return "24 hours" if days == 1 else f"{days} days"
@@ -275,9 +250,15 @@ TOPIC FOCUS (CRITICAL for evidence mode — affects which items to include):
 orchestration), model capabilities (new architectures, benchmarks, latency, context, multimodal), \
 applied/enterprise AI adoption (real deployments, patterns, ROI, org change), research breakthroughs \
 (architecture, training, interpretability, safety papers with concrete results).
+- ALSO PRIORITIZE financial-services AI: fraud detection and AML/KYC automation deployments, \
+AI copilots for credit analysts or financial advisors, core banking modernisation with AI, \
+model risk management tooling (SR 11-7 / Basel IV compliance), RegTech (EU AI Act in banking, \
+FCA/OCC guidance), named banks or financial institutions as actors in real AI deployments \
+(not generic "banks are exploring AI" — must name the institution and the use case).
 - DE-PRIORITIZE: pure funding announcements with no technical substance, generic business PR \
 ("X partners with Y to explore AI"), analyst predictions with no new facts, \
-executive quotes or conference summaries without specific technical details."""
+executive quotes or conference summaries without specific technical details, \
+"banks partner with AI vendor" press releases with no deployment specifics."""
     else:
         recency_rule = f"""\
 HARD RULE on recency:
@@ -308,13 +289,16 @@ official blog posts, arXiv){topic_steer}
 
 SOURCE PREFERENCE (CRITICAL — affects which URL you cite):
 - STRONGLY PREFER, in this order: the primary source itself (openai.com, \
-anthropik.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
-filing company's official press release / 10-K / 10-Q, the regulator's official site); \
+anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, the \
+filing company's official press release / 10-K / 10-Q, the regulator's official site — \
+including federalreserve.gov, occ.gov, fca.org.uk, eba.europa.eu, fsb.org); \
 then premium business press (bloomberg.com, ft.com, wsj.com, reuters.com, \
 economist.com, nytimes.com); then premium AI analysts (semianalysis.com, \
 stratechery.com, importai.substack.com, latent.space, platformer.news); \
 then reputable tech press (theverge.com, techcrunch.com, theinformation.com, \
-wired.com, arstechnica.com).
+wired.com, arstechnica.com); then reputable financial-services trade press \
+(risk.net, finextra.com, americanbanker.com, bankingtech.com, pymnts.com) \
+for stories where a named financial institution is the actor.
 - BAN: consumer-tech blogs and SEO-bait sites. Do NOT cite tomsguide.com, \
 tomshardware.com, androidcentral.com, androidpolice.com, 9to5google.com, \
 9to5mac.com, appleinsider.com, macrumors.com, pocket-lint.com, digitaltrends.com, \
@@ -322,8 +306,7 @@ androidauthority.com, xda-developers.com, techradar.com, gizmodo.com, engadget.c
 slashgear.com, lifewire.com. If the only URL you can find for an event is on one \
 of these sites, DROP the item rather than citing it.
 - When the same event is covered by multiple sources, ALWAYS choose the highest-tier \
-source available. A Bloomberg article about a funding round beats a TechCrunch \
-article about the same round, which beats an Android Central article about it.
+source available.
 
 Return your findings as a clear list. For each item include:
 1. Title
@@ -374,50 +357,25 @@ Rules:
 - STRONGLY prefer primary sources. Primary = the org/lab/paper itself: openai.com, \
 anthropic.com, deepmind.google, ai.meta.com, huggingface.co, arxiv.org, nature.com, \
 sec.gov filings, official company press releases, official policy / regulatory body sites.
-- Aggregators / recap / roundup pages are NEVER acceptable. These include URL slugs \
-containing `recap`, `roundup`, `wrap-up`, `digest`, `weekly-top-N`, `top-5`, \
-`top-10`, `ai-tools-updates-`, `ai-by-ai-`, `week-in-ai`, `this-week-in-ai`, or \
-any month-day-day-year span like `may-18-24-2026`. Domains like aitoolsrecap.com, \
-aiweeklynews.com, ainews.com (etc.) are aggregators by design. DROP these items \
-entirely — do not include them even with a low impact_score. Find the underlying \
-primary source instead, or omit the trend.
+- Aggregators / recap / roundup pages are NEVER acceptable. DROP these items entirely.
 - SOURCE TIER PREFERENCE (use the highest-tier URL available for each event):
   Tier 1 (preferred): bloomberg.com, ft.com, wsj.com, reuters.com, economist.com, \
 nytimes.com, semianalysis.com, stratechery.com, importai.substack.com, latent.space, \
 platformer.news, garymarcus.substack.com — plus any primary source above.
   Tier 2 (acceptable): theverge.com, techcrunch.com, theinformation.com, wired.com, \
 arstechnica.com, venturebeat.com, the-decoder.com, 404media.co, bbc.co.uk.
-  BANNED (never cite — DROP the item if these are the only source): tomsguide.com, \
-tomshardware.com, androidcentral.com, androidpolice.com, 9to5google.com, 9to5mac.com, \
-appleinsider.com, macrumors.com, pocket-lint.com, digitaltrends.com, androidauthority.com, \
-xda-developers.com, techradar.com, gizmodo.com, engadget.com, slashgear.com, lifewire.com.
+  BANNED (never cite): tomsguide.com, tomshardware.com, androidcentral.com, \
+androidpolice.com, 9to5google.com, 9to5mac.com, appleinsider.com, macrumors.com, \
+pocket-lint.com, digitaltrends.com, androidauthority.com, xda-developers.com, \
+techradar.com, gizmodo.com, engadget.com, slashgear.com, lifewire.com.
 - SPECIFICITY RULE (CRITICAL): every trend must point to a specific event with a \
-named entity — a product, capability, paper title, dollar amount, regulatory action, \
-benchmark result, or org-vs-org move. Vague items get DROPPED, not included.
-  BAD (drop these): "X enhances its Y portfolio", "X announces advancements in Z", \
-"X makes progress on AI safety", "X strengthens its AI capabilities". These have no \
-concrete event — there's nothing for a reader to actually learn about.
-  GOOD (keep these): "OpenAI ships GPT-X with N% improvement on benchmark Y", \
-"Anthropic raises $Nbn at $Xbn valuation led by Z", "DeepMind paper proves \
-attention sinks reduce long-context drift by 40%", "EU AI Act Article 6 enters \
-force, requiring Z for general-purpose models".
-- TITLE/SUMMARY PRESERVATION: when the search result lists several specific named \
-entities (e.g. "Google I/O 2026: Gemini 3.5 Flash, Spark Agent, Android XR Glasses"), \
-the title field MUST keep those specific names. Do NOT abbreviate to "Major AI \
-Announcements" or "Several new releases". The one_line_summary field MUST also name \
-the same specific entities so the writer downstream can reuse them.
-- URL SPECIFICITY: The url MUST point to a specific article / announcement / paper \
-/ filing. Reject URLs that are search results, category pages, tag pages, or \
-listing/index pages (e.g. anything with `?keywords=`, `?search=`, `?tag=`, paths \
-like `/category/`, `/tag/`, or paths ending in a category name like `/ai/`, \
-`/artificial_intelligence/`, `/press-releases/`). If you can only find a listing \
-page for the event, DROP the item.
-- OPINION / PREDICTION FILTER: DROP opinion columns, hot-takes, podcast quotes, \
-interview snippets, and personal predictions about what someone thinks will happen \
-in the future (e.g. "X exec predicts Y will happen by 20XX"). Include only CONCRETE \
-events that actually happened: product launches, models released, papers published, \
-regulations enacted, funding rounds closed, deals signed, key hires announced, \
-benchmark results posted, lawsuits filed."""
+named entity. Vague items get DROPPED.
+  BAD: "X enhances its Y portfolio", "X announces advancements in Z".
+  GOOD: "OpenAI ships GPT-X with N% improvement on benchmark Y".
+- TITLE/SUMMARY PRESERVATION: keep specific named entities in titles and summaries.
+- URL SPECIFICITY: url must point to a specific article, not a listing/category page.
+- OPINION / PREDICTION FILTER: DROP opinion columns, hot-takes, and personal \
+predictions. Include only CONCRETE events that actually happened."""
 
 
 STRUCTURE_PROMPT = _structure_prompt()  # default for back-compat
@@ -430,14 +388,7 @@ def _structured_trends_from_text(
     lookback_hours: int = 168,
     soft_recency: bool = False,
 ) -> list[Trend]:
-    """Second LLM pass: turn the free-form search result into JSON trends.
-
-    When soft_recency=True (evidence-gathering mode) the hard recency gate is
-    skipped — older items are kept and down-weighted by the ranker's recency
-    decay instead of being dropped here. This allows a ~5-week pool to contain
-    older corroborating data points for trend synthesis.
-    """
-    # Import locally to avoid a hard formatter↔search circular at module load.
+    """Second LLM pass: turn the free-form search result into JSON trends."""
     from linkedin_agent.formatter import _strip_tracking
 
     response = client.chat.completions.create(
@@ -456,8 +407,6 @@ def _structured_trends_from_text(
         logger.warning("structure pass returned invalid JSON; trying to recover")
         data = {}
 
-    # Recency cutoff = lookback window + 12h grace buffer (timezone noise,
-    # end-of-day publishes that landed just before the window started).
     cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours + 12)
 
     trends: list[Trend] = []
@@ -466,9 +415,6 @@ def _structured_trends_from_text(
             published_raw = str(item.get("published_at", "")).strip()
             published_at: datetime | None = _parse_published_at(published_raw)
 
-            # Hard recency gate (skipped in evidence/soft_recency mode — the ranker
-            # applies a soft decay instead so older items can still serve as
-            # corroborating evidence for a multi-week pattern).
             if not soft_recency and published_at is not None and published_at < cutoff:
                 logger.info(
                     "dropping trend %r as too old: published_at=%s, cutoff=%s",
@@ -480,8 +426,6 @@ def _structured_trends_from_text(
 
             cleaned_url = _strip_tracking(str(item["url"]).strip())
 
-            # Drop listing / search / category URLs — they don't point to a
-            # specific event we can write about.
             if _is_listing_url(cleaned_url):
                 logger.info(
                     "dropping trend %r: URL %s looks like a listing/search page",
@@ -490,8 +434,6 @@ def _structured_trends_from_text(
                 )
                 continue
 
-            # Drop recap / roundup / aggregator articles — they mix multiple
-            # events under a generic headline, so each bullet ends up vague.
             if _is_aggregator_url(cleaned_url):
                 logger.info(
                     "dropping trend %r: URL %s looks like a recap/aggregator",
@@ -521,27 +463,16 @@ _BARE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _parse_published_at(raw: str) -> datetime | None:
-    """Parse the LLM-supplied published_at into a tz-aware datetime.
-
-    The LLM may return either a full ISO timestamp ("2026-05-19T14:30:00Z")
-    or a bare date ("2026-05-19"). Bare dates are interpreted as the END of
-    that day in UTC, so they don't get spuriously dropped by the recency
-    cutoff just because the day overlaps the window boundary. (Treating a
-    bare date as midnight would put any boundary-day item ~12h before the
-    grace cutoff, which has caused real-world drops in production.)
-    """
+    """Parse the LLM-supplied published_at into a tz-aware datetime."""
     raw = (raw or "").strip()
     if not raw:
         return None
-    # Bare date first: treat as end-of-day UTC. Done before fromisoformat
-    # because that helper also accepts bare dates but defaults to midnight.
     if _BARE_DATE_RE.match(raw):
         try:
             dt = datetime.strptime(raw, "%Y-%m-%d")
         except ValueError:
             return None
         return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-    # Full ISO datetime (handle trailing 'Z')
     iso = raw.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(iso)
@@ -564,8 +495,6 @@ def _openai_web_search(
         tools=[{"type": "web_search_preview"}],
         input=_web_search_prompt(lookback_hours=lookback_hours, mode=mode),
     )
-    # The Responses API returns a list of output items; `output_text` is the
-    # convenience accessor for the concatenated assistant text.
     text = getattr(response, "output_text", "") or ""
     if not text:
         logger.warning("OpenAI web_search returned empty output_text")
@@ -613,20 +542,10 @@ Include EVERY input item. Use the same integer "i" you were given.
 
 
 def score_rss_items(client: OpenAI, model: str, items: list[Trend]) -> list[Trend]:
-    """Score RSS-sourced items on the same 0-10 scale as OpenAI web-search items.
-
-    Without this pass, RSS items have impact_score=0 and end up pinned at the
-    ranker's flat 4.0 base, so an RSS-rich week can never clear the 5.0 quality
-    floor. A single batched LLM call assigns each item a real score and a
-    "why_it_matters" sentence.
-
-    Items beyond the first ``max_to_score`` (sorted by recency desc) are left
-    unscored so we keep the call cheap and focused.
-    """
+    """Score RSS-sourced items on the same 0-10 scale as OpenAI web-search items."""
     if not items:
         return items
 
-    # Score the most recent N items only; older items are unlikely to win on score.
     max_to_score = 40
     ordered = sorted(
         items,
@@ -676,7 +595,6 @@ def score_rss_items(client: OpenAI, model: str, items: list[Trend]) -> list[Tren
             score = float(scored.get("impact_score", 0.0))
         except (TypeError, ValueError):
             score = 0.0
-        # Clamp to [0, 10]
         t.impact_score = max(0.0, min(10.0, score))
         wim = str(scored.get("why_it_matters", "") or "").strip()
         if wim:
@@ -705,7 +623,6 @@ def fetch_rss_recent(feeds: list[str], hours: int = 168) -> list[Trend]:
                     continue
                 link = (entry.get("link", "") or "").strip()
                 if _is_listing_url(link) or _is_aggregator_url(link):
-                    # RSS occasionally serves a category page or recap article.
                     continue
                 items.append(
                     Trend(
@@ -836,9 +753,6 @@ def gather_candidate_pool(
     # Cap total pool before returning so rank_candidates works within budget.
     all_items = openai_trends + rss_trends
     if len(all_items) > max_items * 2:
-        # Keep the cap loose here (2x) — rank_candidates will trim to max_items
-        # after applying recency decay and dedup. Cutting too early would
-        # discard items that rank up after dedup-boost.
         openai_trends = openai_trends[:max_items]
         rss_trends = rss_trends[:max_items]
         logger.info(
